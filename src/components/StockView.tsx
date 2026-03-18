@@ -99,6 +99,8 @@ export default function StockView({ products, onOpenProduct }: StockViewProps) {
                 <th className="px-4 py-3 font-semibold">Артикул</th>
                 <th className="px-4 py-3 font-semibold">Бренд</th>
                 <th className="px-4 py-3 font-semibold">Название</th>
+                <th className="px-4 py-3 font-semibold">Закуп. цена</th>
+                <th className="px-4 py-3 font-semibold">Цена продажи</th>
                 <th className="px-4 py-3 font-semibold">Полка</th>
                 <th className="px-4 py-3 font-semibold">Тип</th>
                 <th className="px-4 py-3 font-semibold">Остаток</th>
@@ -129,6 +131,8 @@ export default function StockView({ products, onOpenProduct }: StockViewProps) {
                       </span>
                     )}
                   </td>
+                  <td className="px-4 py-3 text-slate-600 font-medium">{p.purchasePrice} ₽</td>
+                  <td className="px-4 py-3 text-slate-900 font-bold">{p.sellingPrice} ₽</td>
                   <td className="px-4 py-3">
                     {p.location !== '-' && (
                       <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-slate-100 border border-slate-200 text-slate-700 text-xs font-medium">
@@ -163,7 +167,7 @@ export default function StockView({ products, onOpenProduct }: StockViewProps) {
               ))}
               {filteredProducts.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={9} className="px-4 py-8 text-center text-slate-500">
                     Ничего не найдено
                   </td>
                 </tr>

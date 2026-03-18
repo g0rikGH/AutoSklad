@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Product, Phantom } from '../types';
-import { X, MapPin, MessageSquare, Link as LinkIcon, Ghost, Plus, Save } from 'lucide-react';
+import { X, MapPin, MessageSquare, Link as LinkIcon, Ghost, Plus, Save, DollarSign, Tag } from 'lucide-react';
 
 interface ProductModalProps {
   product: Product | null;
@@ -70,6 +70,37 @@ export default function ProductModal({ product, onClose, onSave }: ProductModalP
           <p className="text-slate-700 mb-6">
             <strong className="font-semibold text-slate-900">Название:</strong> {editedProduct.name}
           </p>
+
+          <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200 mb-4">
+            <div>
+              <label className="flex items-center gap-1.5 text-sm font-semibold text-slate-600 mb-2">
+                <DollarSign className="w-4 h-4" /> Закупочная цена:
+              </label>
+              <div className="relative">
+                <input
+                  type="number"
+                  value={editedProduct.purchasePrice || ''}
+                  onChange={(e) => setEditedProduct({...editedProduct, purchasePrice: Number(e.target.value)})}
+                  className="w-full pl-3 pr-8 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₽</span>
+              </div>
+            </div>
+            <div>
+              <label className="flex items-center gap-1.5 text-sm font-semibold text-slate-600 mb-2">
+                <Tag className="w-4 h-4" /> Цена продажи:
+              </label>
+              <div className="relative">
+                <input
+                  type="number"
+                  value={editedProduct.sellingPrice || ''}
+                  onChange={(e) => setEditedProduct({...editedProduct, sellingPrice: Number(e.target.value)})}
+                  className="w-full pl-3 pr-8 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₽</span>
+              </div>
+            </div>
+          </div>
 
           <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200 mb-8">
             <div>

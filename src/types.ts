@@ -11,6 +11,8 @@ export interface Product {
   brand: string;
   name: string;
   qty: number;
+  purchasePrice: number;
+  sellingPrice: number;
   location: string;
   comment: string;
   type: 'real' | 'phantom';
