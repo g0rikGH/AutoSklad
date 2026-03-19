@@ -1,15 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { Product, Phantom } from '../types';
+import { ProductView } from '../types';
 import { X, MapPin, MessageSquare, Link as LinkIcon, Ghost, Plus, Save, DollarSign, Tag } from 'lucide-react';
 
 interface ProductModalProps {
-  product: Product | null;
+  product: ProductView | null;
+  allProducts: ProductView[];
   onClose: () => void;
-  onSave: (updatedProduct: Product) => void;
+  onSave: (updatedProduct: ProductView) => void;
+  onAddPhantom: (parentId: string, sku: string, price: number) => void;
+  onRemovePhantom: (phantomId: string) => void;
 }
 
-export default function ProductModal({ product, onClose, onSave }: ProductModalProps) {
-  const [editedProduct, setEditedProduct] = useState<Product | null>(null);
+export default function ProductModal({ product, allProducts, onClose, onSave, onAddPhantom, onRemovePhantom }: ProductModalProps) {
+  const [editedProduct, setEditedProduct] = useState<ProductView | null>(null);
   const [newPhantomSku, setNewPhantomSku] = useState('');
   const [newPhantomPrice, setNewPhantomPrice] = useState('');
 
@@ -19,25 +22,25 @@ export default function ProductModal({ product, onClose, onSave }: ProductModalP
 
   if (!editedProduct) return null;
 
-  const handleAddPhantom = () => {
+  const handleAddPhantomClick = () => {
     if (!newPhantomSku.trim()) return;
-    setEditedProduct({
-      ...editedProduct,
-      phantoms: [
-        ...editedProduct.phantoms,
-        { sku: newPhantomSku.trim(), price: newPhantomPrice ? Number(newPhantomPrice) : undefined }
-      ]
-    });
-    setNewPhantomSku('');
-    setNewPhantomPrice('');
+    
+    // If editing a phantom, we can't add a phantom to it.
+    // We should add it to its parent.
+    const parentId = editedProduct.type === 'real' ? editedProduct.id : editedProduct.parentId;
+    
+    if (parentId) {
+      onAddPhantom(parentId, newPhantomSku.trim(), newPhantomPrice ? Number(newPhantomPrice) : 0);
+      setNewPhantomSku('');
+      setNewPhantomPrice('');
+    }
   };
 
-  const handleRemovePhantom = (skuToRemove: string) => {
-    setEditedProduct({
-      ...editedProduct,
-      phantoms: editedProduct.phantoms.filter(p => p.sku !== skuToRemove)
-    });
-  };
+  // Find phantoms associated with this product
+  const parentId = editedProduct.type === 'real' ? editedProduct.id : editedProduct.parentId;
+  const phantoms = parentId 
+    ? allProducts.filter(p => p.type === 'phantom' && p.parentId === parentId)
+    : [];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
@@ -120,7 +123,7 @@ export default function ProductModal({ product, onClose, onSave }: ProductModalP
               </label>
               <input
                 type="text"
-                value={editedProduct.comment}
+                value={editedProduct.comment || ''}
                 onChange={(e) => setEditedProduct({...editedProduct, comment: e.target.value})}
                 className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
@@ -133,20 +136,20 @@ export default function ProductModal({ product, onClose, onSave }: ProductModalP
             </h4>
             
             <ul className="space-y-2 mb-4">
-              {editedProduct.phantoms.length === 0 ? (
+              {phantoms.length === 0 ? (
                 <li className="text-sm text-slate-500 italic">Нет привязанных фантомов</li>
               ) : (
-                editedProduct.phantoms.map((phantom) => (
-                  <li key={phantom.sku} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-lg">
+                phantoms.map((phantom) => (
+                  <li key={phantom.id} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-lg">
                     <div className="flex items-center gap-2">
                       <Ghost className="w-4 h-4 text-amber-500" />
-                      <span className="font-bold text-slate-700">{phantom.sku}</span>
+                      <span className="font-bold text-slate-700">{phantom.article}</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <div className="relative">
                         <input
                           type="number"
-                          value={phantom.price || ''}
+                          value={phantom.sellingPrice || ''}
                           readOnly
                           className="w-24 px-3 py-1.5 text-right bg-slate-50 border border-slate-200 rounded-md text-sm"
                           placeholder="Цена"
@@ -154,7 +157,7 @@ export default function ProductModal({ product, onClose, onSave }: ProductModalP
                         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₽</span>
                       </div>
                       <button 
-                        onClick={() => handleRemovePhantom(phantom.sku)}
+                        onClick={() => onRemovePhantom(phantom.id)}
                         className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-md transition-colors"
                       >
                         <X className="w-4 h-4" />
@@ -181,11 +184,11 @@ export default function ProductModal({ product, onClose, onSave }: ProductModalP
                   type="number"
                   value={newPhantomPrice}
                   onChange={(e) => setNewPhantomPrice(e.target.value)}
-                  placeholder="Цена"
-                  className="w-28 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Цена продажи"
+                  className="w-32 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 <button 
-                  onClick={handleAddPhantom}
+                  onClick={handleAddPhantomClick}
                   className="px-3 py-2 bg-emerald-100 text-emerald-700 hover:bg-emerald-200 rounded-lg transition-colors flex items-center justify-center"
                 >
                   <Plus className="w-5 h-5" />

@@ -1,15 +1,18 @@
 import React, { useState, useRef } from 'react';
-import { Client } from '../types';
+import { Partner, Document, ProductView } from '../types';
 import { FolderOpen, Plus, FileSpreadsheet, Columns, RotateCcw, CheckCheck, Eye, TableProperties } from 'lucide-react';
 
 interface ExpenseViewProps {
-  clients: Client[];
+  clients: Partner[];
+  products: ProductView[];
   onAddClient: (name: string) => void;
+  onSaveDocument: (doc: Document) => void;
 }
 
 type Step = 'upload' | 'mapping' | 'reconcile';
 
 interface ReconcileItem {
+  productId: string;
   sku: string;
   brand: string;
   name: string;
@@ -19,7 +22,7 @@ interface ReconcileItem {
   shipQty: number;
 }
 
-export default function ExpenseView({ clients, onAddClient }: ExpenseViewProps) {
+export default function ExpenseView({ clients, products, onAddClient, onSaveDocument }: ExpenseViewProps) {
   const [step, setStep] = useState<Step>('upload');
   const [selectedClient, setSelectedClient] = useState('');
   const [fileName, setFileName] = useState('');
@@ -48,11 +51,41 @@ export default function ExpenseView({ clients, onAddClient }: ExpenseViewProps) 
 
   const handleProceedToReconcile = () => {
     // Mock data generation based on the original HTML
-    setItems([
-      { sku: "L06L109259E", brand: "VAG", name: "Магнит клапана фазорегулятора", reqQty: 10, stockQty: 15, price: 1500, shipQty: 10 },
-      { sku: "15208-65F0A", brand: "Nissan", name: "Фильтр масляный", reqQty: 10, stockQty: 4, price: 800, shipQty: 4 },
-      { sku: "06L109259a", brand: "VAG (Фантом)", name: "Магнит клапана (кросс)", reqQty: 5, stockQty: 0, price: 1200, shipQty: 0 }
-    ]);
+    // In a real app, this would parse the uploaded file and match with products
+    const mockRequested = [
+      { article: "L06L109259E", reqQty: 10 },
+      { article: "15208-65F0A", reqQty: 10 },
+      { article: "06L109259a", reqQty: 5 }
+    ];
+
+    const reconcileItems: ReconcileItem[] = mockRequested.map(req => {
+      const product = products.find(p => p.article === req.article);
+      if (product) {
+        return {
+          productId: product.id,
+          sku: product.article,
+          brand: product.brand,
+          name: product.name,
+          reqQty: req.reqQty,
+          stockQty: product.qty,
+          price: product.sellingPrice,
+          shipQty: Math.min(req.reqQty, product.qty) // Default to max available
+        };
+      } else {
+        return {
+          productId: 'unknown',
+          sku: req.article,
+          brand: 'Неизвестно',
+          name: 'Товар не найден',
+          reqQty: req.reqQty,
+          stockQty: 0,
+          price: 0,
+          shipQty: 0
+        };
+      }
+    });
+
+    setItems(reconcileItems);
     setStep('reconcile');
   };
 
@@ -73,6 +106,32 @@ export default function ExpenseView({ clients, onAddClient }: ExpenseViewProps) 
   };
 
   const handleConfirm = () => {
+    const documentRows = items
+      .filter(item => item.shipQty > 0 && item.productId !== 'unknown')
+      .map(item => ({
+        productId: item.productId,
+        qty: item.shipQty,
+        price: item.price
+      }));
+
+    if (documentRows.length === 0) {
+      alert("Нет товаров к отгрузке!");
+      return;
+    }
+
+    const totalAmount = documentRows.reduce((sum, row) => sum + (row.qty * row.price), 0);
+
+    const newDoc: Document = {
+      id: `doc_${Date.now()}`,
+      type: 'expense',
+      date: new Date().toISOString(),
+      partnerId: selectedClient,
+      rows: documentRows,
+      totalAmount
+    };
+
+    onSaveDocument(newDoc);
+
     alert("Накладная проведена! Остатки списаны.");
     setStep('upload');
     setFileName('');
@@ -84,7 +143,7 @@ export default function ExpenseView({ clients, onAddClient }: ExpenseViewProps) 
     const name = prompt('Введите ФИО/Название нового покупателя:');
     if (name && name.trim()) {
       onAddClient(name.trim());
-      setSelectedClient(name.trim());
+      // We can't automatically select the new client here because the ID is generated in App.tsx
     }
   };
 
@@ -121,24 +180,26 @@ export default function ExpenseView({ clients, onAddClient }: ExpenseViewProps) 
             </div>
           </div>
 
-          <input
-            type="file"
-            ref={fileInputRef}
-            accept=".xlsx, .xls, .csv"
-            onChange={handleFileSelect}
-            className="hidden"
-          />
-          
-          <button 
-            onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-2 px-4 py-2 border border-blue-600 text-blue-600 hover:bg-blue-50 rounded-lg text-sm font-medium transition-colors mb-6"
-          >
-            <FolderOpen className="w-4 h-4" />
-            Выбрать файл-заявку
-          </button>
+          <div className="flex items-center gap-4">
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept=".xlsx, .xls, .csv"
+              onChange={handleFileSelect}
+              className="hidden"
+            />
+            
+            <button 
+              onClick={() => fileInputRef.current?.click()}
+              className="flex items-center gap-2 px-4 py-2 border border-blue-600 text-blue-600 hover:bg-blue-50 rounded-lg text-sm font-medium transition-colors"
+            >
+              <FolderOpen className="w-4 h-4" />
+              Выбрать файл-заявку
+            </button>
+          </div>
 
           {fileName && (
-            <div className="flex items-center justify-between p-4 bg-blue-50 border border-blue-100 rounded-lg">
+            <div className="mt-6 flex items-center justify-between p-4 bg-blue-50 border border-blue-100 rounded-lg">
               <div className="flex items-center gap-3">
                 <FileSpreadsheet className="w-6 h-6 text-emerald-600" />
                 <span className="font-semibold text-slate-800">{fileName}</span>

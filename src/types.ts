@@ -1,33 +1,66 @@
 export type TabId = 'stock' | 'income' | 'expense' | 'reports' | 'price';
 
-export interface Phantom {
-  sku: string;
-  price?: number;
-}
-
-export interface Product {
+// 1. Catalog (Nomenclature)
+export interface CatalogItem {
   id: string;
   article: string;
   brand: string;
   name: string;
+  location: string;
+  comment?: string;
+  type: 'real' | 'phantom';
+  parentId?: string; // For phantoms, points to a real CatalogItem id
+}
+
+// 2. Stock Register
+export interface StockRecord {
+  productId: string;
+  qty: number;
+}
+
+// 3. Pricing Register
+export interface PriceRecord {
+  productId: string;
+  purchasePrice: number;
+  sellingPrice: number;
+}
+
+// 4. Partners
+export interface Partner {
+  id: string;
+  name: string;
+  type: 'supplier' | 'client';
+}
+
+// 5. Documents (Transactions)
+export interface DocumentRow {
+  productId: string;
+  qty: number;
+  price: number; // Fixed price at the time of transaction
+}
+
+export interface Document {
+  id: string;
+  type: 'income' | 'expense';
+  date: string;
+  partnerId: string;
+  rows: DocumentRow[];
+  totalAmount: number;
+}
+
+// Helper type for the UI (Joined View)
+export interface ProductView {
+  id: string;
+  article: string;
+  brand: string;
+  name: string;
+  location: string;
+  comment?: string;
+  type: 'real' | 'phantom';
+  parentId?: string;
   qty: number;
   purchasePrice: number;
   sellingPrice: number;
-  location: string;
-  comment: string;
-  type: 'real' | 'phantom';
-  parentId?: string; // For phantoms, points to the real product
-  phantoms: Phantom[];
-}
-
-export interface Supplier {
-  id: string;
-  name: string;
-}
-
-export interface Client {
-  id: string;
-  name: string;
 }
 
 export interface ColumnMapping {

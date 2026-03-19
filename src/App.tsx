@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import Sidebar from './components/Sidebar';
 import StockView from './components/StockView';
 import IncomeView from './components/IncomeView';
@@ -6,19 +6,21 @@ import ExpenseView from './components/ExpenseView';
 import ReportsView from './components/ReportsView';
 import PriceView from './components/PriceView';
 import ProductModal from './components/ProductModal';
-import { TabId, Product, Supplier, Client } from './types';
-import { initialProducts, initialSuppliers, initialClients } from './data';
+import { TabId, CatalogItem, StockRecord, PriceRecord, Partner, Document, ProductView } from './types';
+import { initialCatalog, initialStock, initialPrices, initialPartners, initialDocuments } from './data';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabId>('stock');
   
-  // Global State
-  const [products, setProducts] = useState<Product[]>(initialProducts);
-  const [suppliers, setSuppliers] = useState<Supplier[]>(initialSuppliers);
-  const [clients, setClients] = useState<Client[]>(initialClients);
+  // Global State (Normalized)
+  const [catalog, setCatalog] = useState<CatalogItem[]>(initialCatalog);
+  const [stock, setStock] = useState<StockRecord[]>(initialStock);
+  const [prices, setPrices] = useState<PriceRecord[]>(initialPrices);
+  const [partners, setPartners] = useState<Partner[]>(initialPartners);
+  const [documents, setDocuments] = useState<Document[]>(initialDocuments);
 
   // Modal State
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [selectedProduct, setSelectedProduct] = useState<ProductView | null>(null);
 
   // Background color mapping based on active tab
   const bgColors: Record<TabId, string> = {
@@ -29,20 +31,151 @@ export default function App() {
     price: 'bg-amber-50/50',
   };
 
-  const handleSaveProduct = (updatedProduct: Product) => {
-    setProducts(products.map(p => p.id === updatedProduct.id ? updatedProduct : p));
+  // Join data to create ProductView array for UI components
+  const productsView: ProductView[] = useMemo(() => {
+    return catalog.map(item => {
+      // Find stock. If phantom, find stock of parent.
+      let currentQty = 0;
+      if (item.type === 'real') {
+        currentQty = stock.find(s => s.productId === item.id)?.qty || 0;
+      } else if (item.type === 'phantom' && item.parentId) {
+        currentQty = stock.find(s => s.productId === item.parentId)?.qty || 0;
+      }
+
+      // Find prices
+      const priceRecord = prices.find(p => p.productId === item.id);
+
+      return {
+        ...item,
+        qty: currentQty,
+        purchasePrice: priceRecord?.purchasePrice || 0,
+        sellingPrice: priceRecord?.sellingPrice || 0,
+      };
+    });
+  }, [catalog, stock, prices]);
+
+  const handleSaveProduct = (updatedProductView: ProductView) => {
+    // Update Catalog
+    setCatalog(prev => prev.map(c => c.id === updatedProductView.id ? {
+      id: updatedProductView.id,
+      article: updatedProductView.article,
+      brand: updatedProductView.brand,
+      name: updatedProductView.name,
+      location: updatedProductView.location,
+      comment: updatedProductView.comment,
+      type: updatedProductView.type,
+      parentId: updatedProductView.parentId,
+    } : c));
+
+    // Update Prices
+    setPrices(prev => {
+      const existing = prev.find(p => p.productId === updatedProductView.id);
+      if (existing) {
+        return prev.map(p => p.productId === updatedProductView.id ? {
+          ...p,
+          purchasePrice: updatedProductView.purchasePrice,
+          sellingPrice: updatedProductView.sellingPrice,
+        } : p);
+      } else {
+        return [...prev, {
+          productId: updatedProductView.id,
+          purchasePrice: updatedProductView.purchasePrice,
+          sellingPrice: updatedProductView.sellingPrice,
+        }];
+      }
+    });
+
     setSelectedProduct(null);
   };
 
-  const handleAddSupplier = (name: string) => {
-    const newSupplier: Supplier = { id: `s${Date.now()}`, name };
-    setSuppliers([...suppliers, newSupplier]);
+  const handleAddPartner = (name: string, type: 'supplier' | 'client') => {
+    const newPartner: Partner = { id: `p${Date.now()}`, name, type };
+    setPartners([...partners, newPartner]);
   };
 
-  const handleAddClient = (name: string) => {
-    const newClient: Client = { id: `c${Date.now()}`, name };
-    setClients([...clients, newClient]);
+  const handleSaveDocument = (doc: Document) => {
+    setDocuments([...documents, doc]);
+    
+    // Update stock based on document
+    setStock(prevStock => {
+      let newStock = [...prevStock];
+      
+      doc.rows.forEach(row => {
+        const existingStockIndex = newStock.findIndex(s => s.productId === row.productId);
+        const qtyChange = doc.type === 'income' ? row.qty : -row.qty;
+        
+        if (existingStockIndex >= 0) {
+          newStock[existingStockIndex] = {
+            ...newStock[existingStockIndex],
+            qty: newStock[existingStockIndex].qty + qtyChange
+          };
+        } else {
+          newStock.push({
+            productId: row.productId,
+            qty: qtyChange
+          });
+        }
+      });
+      
+      return newStock;
+    });
+
+    // If it's an income document, update purchase prices
+    if (doc.type === 'income') {
+      setPrices(prevPrices => {
+        let newPrices = [...prevPrices];
+        doc.rows.forEach(row => {
+          const existingPriceIndex = newPrices.findIndex(p => p.productId === row.productId);
+          if (existingPriceIndex >= 0) {
+            newPrices[existingPriceIndex] = {
+              ...newPrices[existingPriceIndex],
+              purchasePrice: row.price // Update purchase price to the latest one
+            };
+          } else {
+            newPrices.push({
+              productId: row.productId,
+              purchasePrice: row.price,
+              sellingPrice: row.price * 1.5 // Default markup
+            });
+          }
+        });
+        return newPrices;
+      });
+    }
   };
+
+  const handleAddPhantom = (parentId: string, sku: string, price: number) => {
+    const newId = `p${Date.now()}`;
+    const parentProduct = catalog.find(c => c.id === parentId);
+    
+    if (!parentProduct) return;
+
+    const newPhantom: CatalogItem = {
+      id: newId,
+      article: sku,
+      brand: `${parentProduct.brand} (Фантом)`,
+      name: `${parentProduct.name} (кросс)`,
+      location: parentProduct.location,
+      type: 'phantom',
+      parentId: parentId
+    };
+
+    setCatalog([...catalog, newPhantom]);
+    
+    setPrices([...prices, {
+      productId: newId,
+      purchasePrice: 0,
+      sellingPrice: price
+    }]);
+  };
+
+  const handleRemovePhantom = (phantomId: string) => {
+    setCatalog(catalog.filter(c => c.id !== phantomId));
+    setPrices(prices.filter(p => p.productId !== phantomId));
+  };
+
+  const suppliers = partners.filter(p => p.type === 'supplier');
+  const clients = partners.filter(p => p.type === 'client');
 
   return (
     <div className={`flex min-h-screen transition-colors duration-500 ease-in-out ${bgColors[activeTab]}`}>
@@ -52,7 +185,7 @@ export default function App() {
         <div className="max-w-7xl mx-auto">
           {activeTab === 'stock' && (
             <StockView 
-              products={products} 
+              products={productsView} 
               onOpenProduct={setSelectedProduct} 
             />
           )}
@@ -60,20 +193,24 @@ export default function App() {
           {activeTab === 'income' && (
             <IncomeView 
               suppliers={suppliers} 
-              onAddSupplier={handleAddSupplier} 
+              products={productsView}
+              onAddSupplier={(name) => handleAddPartner(name, 'supplier')} 
+              onSaveDocument={handleSaveDocument}
             />
           )}
           
           {activeTab === 'expense' && (
             <ExpenseView 
               clients={clients} 
-              onAddClient={handleAddClient} 
+              products={productsView}
+              onAddClient={(name) => handleAddPartner(name, 'client')} 
+              onSaveDocument={handleSaveDocument}
             />
           )}
           
-          {activeTab === 'reports' && <ReportsView />}
+          {activeTab === 'reports' && <ReportsView documents={documents} products={productsView} partners={partners} />}
           
-          {activeTab === 'price' && <PriceView />}
+          {activeTab === 'price' && <PriceView products={productsView} />}
         </div>
       </main>
 
@@ -81,8 +218,11 @@ export default function App() {
       {selectedProduct && (
         <ProductModal 
           product={selectedProduct} 
+          allProducts={productsView}
           onClose={() => setSelectedProduct(null)}
           onSave={handleSaveProduct}
+          onAddPhantom={handleAddPhantom}
+          onRemovePhantom={handleRemovePhantom}
         />
       )}
     </div>

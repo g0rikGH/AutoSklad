@@ -1,15 +1,17 @@
 import React, { useState, useRef } from 'react';
-import { Supplier } from '../types';
+import { Partner, Document, ProductView } from '../types';
 import { FolderOpen, Plus, FileSpreadsheet, Columns, RotateCcw, CheckCheck, Eye } from 'lucide-react';
 
 interface IncomeViewProps {
-  suppliers: Supplier[];
+  suppliers: Partner[];
+  products: ProductView[];
   onAddSupplier: (name: string) => void;
+  onSaveDocument: (doc: Document) => void;
 }
 
 type Step = 'upload' | 'mapping';
 
-export default function IncomeView({ suppliers, onAddSupplier }: IncomeViewProps) {
+export default function IncomeView({ suppliers, products, onAddSupplier, onSaveDocument }: IncomeViewProps) {
   const [step, setStep] = useState<Step>('upload');
   const [selectedSupplier, setSelectedSupplier] = useState('');
   const [fileName, setFileName] = useState('');
@@ -34,6 +36,36 @@ export default function IncomeView({ suppliers, onAddSupplier }: IncomeViewProps
   };
 
   const handleConfirm = () => {
+    // Mock document creation based on the preview table
+    // In a real app, this would parse the uploaded file
+    const mockRows = [
+      { article: 'L06L109259E', qty: 50, price: 1200 },
+      { article: '15208-65F0A', qty: 20, price: 650 }
+    ];
+
+    const documentRows = mockRows.map(row => {
+      // Find product by article
+      const product = products.find(p => p.article === row.article);
+      return {
+        productId: product ? product.id : `new_${Date.now()}_${Math.random()}`, // Mock new ID if not found
+        qty: row.qty,
+        price: row.price
+      };
+    });
+
+    const totalAmount = documentRows.reduce((sum, row) => sum + (row.qty * row.price), 0);
+
+    const newDoc: Document = {
+      id: `doc_${Date.now()}`,
+      type: 'income',
+      date: new Date().toISOString(),
+      partnerId: selectedSupplier,
+      rows: documentRows,
+      totalAmount
+    };
+
+    onSaveDocument(newDoc);
+
     alert(`Накладная от поставщика успешно проведена!\nНовые остатки будут добавлены на склад.`);
     setStep('upload');
     setFileName('');
@@ -45,7 +77,8 @@ export default function IncomeView({ suppliers, onAddSupplier }: IncomeViewProps
     const name = prompt('Введите наименование нового поставщика:');
     if (name && name.trim()) {
       onAddSupplier(name.trim());
-      setSelectedSupplier(name.trim()); // Assuming ID is the name for simplicity in this prototype
+      // We can't automatically select the new supplier here because the ID is generated in App.tsx
+      // In a real app, onAddSupplier would return the new ID or we'd use a form.
     }
   };
 
@@ -83,24 +116,26 @@ export default function IncomeView({ suppliers, onAddSupplier }: IncomeViewProps
             </div>
           </div>
 
-          <input
-            type="file"
-            ref={fileInputRef}
-            accept=".xlsx, .xls, .csv"
-            onChange={handleFileSelect}
-            className="hidden"
-          />
-          
-          <button 
-            onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-2 px-4 py-2 border border-blue-600 text-blue-600 hover:bg-blue-50 rounded-lg text-sm font-medium transition-colors mb-6"
-          >
-            <FolderOpen className="w-4 h-4" />
-            Выбрать файл на компьютере
-          </button>
+          <div className="flex items-center gap-4">
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept=".xlsx, .xls, .csv"
+              onChange={handleFileSelect}
+              className="hidden"
+            />
+            
+            <button 
+              onClick={() => fileInputRef.current?.click()}
+              className="flex items-center gap-2 px-4 py-2 border border-blue-600 text-blue-600 hover:bg-blue-50 rounded-lg text-sm font-medium transition-colors"
+            >
+              <FolderOpen className="w-4 h-4" />
+              Выбрать файл на компьютере
+            </button>
+          </div>
 
           {fileName && (
-            <div className="flex items-center justify-between p-4 bg-blue-50 border border-blue-100 rounded-lg">
+            <div className="mt-6 flex items-center justify-between p-4 bg-blue-50 border border-blue-100 rounded-lg">
               <div className="flex items-center gap-3">
                 <FileSpreadsheet className="w-6 h-6 text-emerald-600" />
                 <span className="font-semibold text-slate-800">{fileName}</span>

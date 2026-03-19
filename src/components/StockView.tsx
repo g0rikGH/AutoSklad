@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-import { Product } from '../types';
+import { ProductView } from '../types';
 import { Search, RefreshCw, MapPin } from 'lucide-react';
 
 interface StockViewProps {
-  products: Product[];
-  onOpenProduct: (product: Product) => void;
+  products: ProductView[];
+  onOpenProduct: (product: ProductView) => void;
 }
 
 export default function StockView({ products, onOpenProduct }: StockViewProps) {
@@ -119,17 +119,38 @@ export default function StockView({ products, onOpenProduct }: StockViewProps) {
                         {p.article}
                       </button>
                     ) : (
-                      <span className="font-bold text-slate-700">{p.article}</span>
+                      <button 
+                        onClick={() => {
+                          if (p.parentId) {
+                            const rootProduct = products.find(rp => rp.id === p.parentId);
+                            if (rootProduct) onOpenProduct(rootProduct);
+                          }
+                        }}
+                        className="font-bold text-amber-600 hover:text-amber-800 underline decoration-dotted underline-offset-4"
+                        title="Открыть карточку корневого товара"
+                      >
+                        {p.article}
+                      </button>
                     )}
                   </td>
                   <td className="px-4 py-3 text-slate-700">{p.brand}</td>
                   <td className="px-4 py-3 text-slate-700">
                     {p.name}
-                    {p.type === 'phantom' && p.parentId && (
-                      <span className="block text-xs text-slate-400 mt-0.5">
-                        корень: {products.find(rp => rp.id === p.parentId)?.article}
-                      </span>
-                    )}
+                    {p.type === 'phantom' && p.parentId && (() => {
+                      const rootProduct = products.find(rp => rp.id === p.parentId);
+                      if (!rootProduct) return null;
+                      return (
+                        <span className="block text-xs text-slate-400 mt-0.5">
+                          корень:{' '}
+                          <button
+                            onClick={() => onOpenProduct(rootProduct)}
+                            className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
+                          >
+                            {rootProduct.article}
+                          </button>
+                        </span>
+                      );
+                    })()}
                   </td>
                   <td className="px-4 py-3 text-slate-600 font-medium">{p.purchasePrice} ₽</td>
                   <td className="px-4 py-3 text-slate-900 font-bold">{p.sellingPrice} ₽</td>
