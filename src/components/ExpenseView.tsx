@@ -1,12 +1,14 @@
 import React, { useState, useRef } from 'react';
 import { Partner, Document, ProductView } from '../types';
-import { FolderOpen, Plus, FileSpreadsheet, Columns, RotateCcw, CheckCheck, Eye, TableProperties } from 'lucide-react';
+import { FolderOpen, Plus, FileSpreadsheet, Columns, RotateCcw, CheckCheck, Eye, TableProperties, History, X, Trash2 } from 'lucide-react';
 
 interface ExpenseViewProps {
   clients: Partner[];
   products: ProductView[];
+  documents: Document[];
   onAddClient: (name: string) => void;
   onSaveDocument: (doc: Document) => void;
+  onRollbackDocument: (id: string) => void;
 }
 
 type Step = 'upload' | 'mapping' | 'reconcile';
@@ -22,7 +24,7 @@ interface ReconcileItem {
   shipQty: number;
 }
 
-export default function ExpenseView({ clients, products, onAddClient, onSaveDocument }: ExpenseViewProps) {
+export default function ExpenseView({ clients, products, documents, onAddClient, onSaveDocument, onRollbackDocument }: ExpenseViewProps) {
   const [step, setStep] = useState<Step>('upload');
   const [selectedClient, setSelectedClient] = useState('');
   const [fileName, setFileName] = useState('');
@@ -35,9 +37,24 @@ export default function ExpenseView({ clients, products, onAddClient, onSaveDocu
   // Reconcile state
   const [items, setItems] = useState<ReconcileItem[]>([]);
 
+  // History state
+  const [historyFilterClient, setHistoryFilterClient] = useState<string>('all');
+  const [viewingDoc, setViewingDoc] = useState<Document | null>(null);
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       setFileName(e.target.files[0].name);
+    }
+  };
+
+  const filteredDocs = documents
+    .filter(d => historyFilterClient === 'all' || d.partnerId === historyFilterClient)
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+  const handleRollback = (docId: string) => {
+    if (window.confirm('Вы уверены, что хотите отменить эту реализацию? Товары вернутся на склад, а документ будет удален.')) {
+      onRollbackDocument(docId);
+      setViewingDoc(null);
     }
   };
 
@@ -391,6 +408,147 @@ export default function ExpenseView({ clients, products, onAddClient, onSaveDocu
               <CheckCheck className="w-4 h-4" />
               Подтвердить и Списать
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* History Section */}
+      {step === 'upload' && (
+        <div className="mt-8 bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
+              <History className="w-5 h-5 text-blue-600" />
+              История реализаций
+            </h3>
+            <div className="flex items-center gap-2">
+              <label className="text-sm text-slate-600">Фильтр по покупателю:</label>
+              <select
+                value={historyFilterClient}
+                onChange={(e) => setHistoryFilterClient(e.target.value)}
+                className="px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="all">Все покупатели</option>
+                {clients.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="border border-slate-200 rounded-xl overflow-hidden">
+            <table className="w-full text-sm text-left">
+              <thead className="bg-slate-50 text-slate-600">
+                <tr>
+                  <th className="py-3 px-4 font-semibold border-b border-slate-200">Дата</th>
+                  <th className="py-3 px-4 font-semibold border-b border-slate-200">Номер документа</th>
+                  <th className="py-3 px-4 font-semibold border-b border-slate-200">Покупатель</th>
+                  <th className="py-3 px-4 font-semibold border-b border-slate-200 text-right">Сумма</th>
+                  <th className="py-3 px-4 font-semibold border-b border-slate-200 text-center">Действия</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {filteredDocs.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="py-8 text-center text-slate-500">
+                      Нет проведенных реализаций
+                    </td>
+                  </tr>
+                ) : (
+                  filteredDocs.map(doc => {
+                    const client = clients.find(c => c.id === doc.partnerId);
+                    return (
+                      <tr key={doc.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="py-3 px-4">{new Date(doc.date).toLocaleString('ru-RU')}</td>
+                        <td className="py-3 px-4 font-medium text-slate-700">{doc.id}</td>
+                        <td className="py-3 px-4">{client?.name || 'Неизвестный покупатель'}</td>
+                        <td className="py-3 px-4 text-right font-bold text-emerald-600">{doc.totalAmount} ₽</td>
+                        <td className="py-3 px-4 text-center">
+                          <button
+                            onClick={() => setViewingDoc(doc)}
+                            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                            title="Просмотр"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Document Modal */}
+      {viewingDoc && (
+        <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between p-6 border-b border-slate-100">
+              <div>
+                <h2 className="text-xl font-bold text-slate-800">Реализация {viewingDoc.id}</h2>
+                <p className="text-sm text-slate-500 mt-1">
+                  от {new Date(viewingDoc.date).toLocaleString('ru-RU')} • Покупатель: {clients.find(c => c.id === viewingDoc.partnerId)?.name || 'Неизвестно'}
+                </p>
+              </div>
+              <button 
+                onClick={() => setViewingDoc(null)}
+                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto flex-1">
+              <table className="w-full text-sm text-left border border-slate-200 rounded-lg overflow-hidden">
+                <thead className="bg-slate-50 text-slate-600">
+                  <tr>
+                    <th className="py-3 px-4 font-semibold border-b border-slate-200">Артикул</th>
+                    <th className="py-3 px-4 font-semibold border-b border-slate-200">Название</th>
+                    <th className="py-3 px-4 font-semibold border-b border-slate-200 text-center">Кол-во</th>
+                    <th className="py-3 px-4 font-semibold border-b border-slate-200 text-right">Цена</th>
+                    <th className="py-3 px-4 font-semibold border-b border-slate-200 text-right">Сумма</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {viewingDoc.rows.map((row, idx) => {
+                    const product = products.find(p => p.id === row.productId);
+                    return (
+                      <tr key={idx} className="hover:bg-slate-50">
+                        <td className="py-2 px-4 font-medium">{product?.article || 'Неизвестно'}</td>
+                        <td className="py-2 px-4">{product?.name || 'Товар удален'}</td>
+                        <td className="py-2 px-4 text-center">{row.qty}</td>
+                        <td className="py-2 px-4 text-right">{row.price} ₽</td>
+                        <td className="py-2 px-4 text-right font-medium">{row.qty * row.price} ₽</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot className="bg-slate-50">
+                  <tr>
+                    <td colSpan={4} className="py-3 px-4 text-right font-bold text-slate-700">Итого:</td>
+                    <td className="py-3 px-4 text-right font-bold text-emerald-600">{viewingDoc.totalAmount} ₽</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+
+            <div className="p-6 border-t border-slate-100 flex justify-between items-center bg-slate-50 rounded-b-2xl">
+              <button
+                onClick={() => handleRollback(viewingDoc.id)}
+                className="flex items-center gap-2 px-4 py-2 bg-rose-100 text-rose-700 hover:bg-rose-200 rounded-lg text-sm font-medium transition-colors"
+              >
+                <Trash2 className="w-4 h-4" />
+                Откат реализации (вернуть на склад)
+              </button>
+              <button
+                onClick={() => setViewingDoc(null)}
+                className="px-6 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-sm font-medium transition-colors"
+              >
+                Закрыть
+              </button>
+            </div>
           </div>
         </div>
       )}

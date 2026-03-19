@@ -1,12 +1,22 @@
 export type TabId = 'stock' | 'income' | 'expense' | 'reports' | 'price';
 
 // 1. Catalog (Nomenclature)
+export interface Brand {
+  id: string;
+  name: string;
+}
+
+export interface Location {
+  id: string;
+  name: string;
+}
+
 export interface CatalogItem {
   id: string;
   article: string;
-  brand: string;
+  brandId: string;
   name: string;
-  location: string;
+  locationId: string | null;
   comment?: string;
   type: 'real' | 'phantom';
   parentId?: string; // For phantoms, points to a real CatalogItem id

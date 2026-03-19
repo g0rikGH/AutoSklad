@@ -1,17 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { ProductView } from '../types';
-import { X, MapPin, MessageSquare, Link as LinkIcon, Ghost, Plus, Save, DollarSign, Tag } from 'lucide-react';
+import { ProductView, Brand, Location } from '../types';
+import { X, MapPin, MessageSquare, Link as LinkIcon, Ghost, Plus, Save, DollarSign, Tag, Building2 } from 'lucide-react';
 
 interface ProductModalProps {
   product: ProductView | null;
   allProducts: ProductView[];
+  brands: Brand[];
+  locations: Location[];
   onClose: () => void;
   onSave: (updatedProduct: ProductView) => void;
   onAddPhantom: (parentId: string, sku: string, price: number) => void;
   onRemovePhantom: (phantomId: string) => void;
 }
 
-export default function ProductModal({ product, allProducts, onClose, onSave, onAddPhantom, onRemovePhantom }: ProductModalProps) {
+export default function ProductModal({ product, allProducts, brands, locations, onClose, onSave, onAddPhantom, onRemovePhantom }: ProductModalProps) {
   const [editedProduct, setEditedProduct] = useState<ProductView | null>(null);
   const [newPhantomSku, setNewPhantomSku] = useState('');
   const [newPhantomPrice, setNewPhantomPrice] = useState('');
@@ -25,8 +27,6 @@ export default function ProductModal({ product, allProducts, onClose, onSave, on
   const handleAddPhantomClick = () => {
     if (!newPhantomSku.trim()) return;
     
-    // If editing a phantom, we can't add a phantom to it.
-    // We should add it to its parent.
     const parentId = editedProduct.type === 'real' ? editedProduct.id : editedProduct.parentId;
     
     if (parentId) {
@@ -36,7 +36,20 @@ export default function ProductModal({ product, allProducts, onClose, onSave, on
     }
   };
 
-  // Find phantoms associated with this product
+  const handleAddBrand = () => {
+    const name = prompt('Введите название нового бренда:');
+    if (name && name.trim()) {
+      setEditedProduct({ ...editedProduct, brand: name.trim() });
+    }
+  };
+
+  const handleAddLocation = () => {
+    const name = prompt('Введите название новой полки/стеллажа:');
+    if (name && name.trim()) {
+      setEditedProduct({ ...editedProduct, location: name.trim() });
+    }
+  };
+
   const parentId = editedProduct.type === 'real' ? editedProduct.id : editedProduct.parentId;
   const phantoms = parentId 
     ? allProducts.filter(p => p.type === 'phantom' && p.parentId === parentId)
@@ -58,7 +71,22 @@ export default function ProductModal({ product, allProducts, onClose, onSave, on
           <div className="flex justify-between items-start mb-6">
             <div>
               <h2 className="text-3xl font-bold text-blue-600 mb-1">{editedProduct.article}</h2>
-              <p className="text-slate-500 font-medium">{editedProduct.brand}</p>
+              <div className="flex items-center gap-2 mt-2">
+                <Building2 className="w-4 h-4 text-slate-400" />
+                <select
+                  value={editedProduct.brand}
+                  onChange={(e) => setEditedProduct({...editedProduct, brand: e.target.value})}
+                  className="px-2 py-1 bg-slate-50 border border-slate-200 rounded text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value={editedProduct.brand}>{editedProduct.brand}</option>
+                  {brands.filter(b => b.name !== editedProduct.brand).map(b => (
+                    <option key={b.id} value={b.name}>{b.name}</option>
+                  ))}
+                </select>
+                <button onClick={handleAddBrand} className="p-1 text-blue-600 hover:bg-blue-50 rounded transition-colors" title="Добавить бренд">
+                  <Plus className="w-4 h-4" />
+                </button>
+              </div>
             </div>
             <div className="text-right">
               <span className="block text-sm text-slate-500 mb-1">Остаток:</span>
@@ -110,12 +138,24 @@ export default function ProductModal({ product, allProducts, onClose, onSave, on
               <label className="flex items-center gap-1.5 text-sm font-semibold text-slate-600 mb-2">
                 <MapPin className="w-4 h-4" /> Полка:
               </label>
-              <input
-                type="text"
-                value={editedProduct.location}
-                onChange={(e) => setEditedProduct({...editedProduct, location: e.target.value})}
-                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+              <div className="flex items-center gap-2">
+                <select
+                  value={editedProduct.location || ''}
+                  onChange={(e) => setEditedProduct({...editedProduct, location: e.target.value || null})}
+                  className="flex-1 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">-- Нет полки --</option>
+                  {editedProduct.location && !locations.find(l => l.name === editedProduct.location) && (
+                    <option value={editedProduct.location}>{editedProduct.location}</option>
+                  )}
+                  {locations.map(l => (
+                    <option key={l.id} value={l.name}>{l.name}</option>
+                  ))}
+                </select>
+                <button onClick={handleAddLocation} className="p-2 border border-slate-300 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors" title="Добавить полку">
+                  <Plus className="w-4 h-4" />
+                </button>
+              </div>
             </div>
             <div>
               <label className="flex items-center gap-1.5 text-sm font-semibold text-slate-600 mb-2">

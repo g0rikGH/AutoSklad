@@ -1,21 +1,33 @@
-import { CatalogItem, StockRecord, PriceRecord, Partner, Document } from './types';
+import { CatalogItem, StockRecord, PriceRecord, Partner, Document, Brand, Location } from './types';
+
+export const initialBrands: Brand[] = [
+  { id: 'b1', name: 'VAG' },
+  { id: 'b2', name: 'Nissan' },
+  { id: 'b3', name: 'Toyota' },
+];
+
+export const initialLocations: Location[] = [
+  { id: 'loc1', name: 'Стеллаж А-12' },
+  { id: 'loc2', name: 'Стеллаж Б-3' },
+  { id: 'loc3', name: 'Стеллаж В-1' },
+];
 
 export const initialCatalog: CatalogItem[] = [
   {
     id: '1',
     article: 'L06L109259E',
-    brand: 'VAG',
+    brandId: 'b1',
     name: 'Магнит клапана фазорегулятора',
-    location: 'Стеллаж А-12',
+    locationId: 'loc1',
     comment: 'Ходовой товар',
     type: 'real',
   },
   {
     id: '2',
     article: '06L109259a',
-    brand: 'VAG',
+    brandId: 'b1',
     name: 'Магнит клапана (кросс)',
-    location: '-',
+    locationId: null,
     comment: '',
     type: 'phantom',
     parentId: '1',
@@ -23,18 +35,18 @@ export const initialCatalog: CatalogItem[] = [
   {
     id: '3',
     article: '15208-65F0A',
-    brand: 'Nissan',
+    brandId: 'b2',
     name: 'Фильтр масляный',
-    location: 'Стеллаж Б-3',
+    locationId: 'loc2',
     comment: '',
     type: 'real',
   },
   {
     id: '4',
     article: '90915-10001',
-    brand: 'Toyota',
+    brandId: 'b3',
     name: 'Фильтр масляный',
-    location: 'Стеллаж В-1',
+    locationId: 'loc3',
     comment: 'Заказано 20 шт.',
     type: 'real',
   },

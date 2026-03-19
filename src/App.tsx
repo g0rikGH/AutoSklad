@@ -6,8 +6,8 @@ import ExpenseView from './components/ExpenseView';
 import ReportsView from './components/ReportsView';
 import PriceView from './components/PriceView';
 import ProductModal from './components/ProductModal';
-import { TabId, CatalogItem, StockRecord, PriceRecord, Partner, Document, ProductView } from './types';
-import { initialCatalog, initialStock, initialPrices, initialPartners, initialDocuments } from './data';
+import { TabId, CatalogItem, StockRecord, PriceRecord, Partner, Document, ProductView, Brand, Location } from './types';
+import { initialCatalog, initialStock, initialPrices, initialPartners, initialDocuments, initialBrands, initialLocations } from './data';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabId>('stock');
@@ -18,6 +18,8 @@ export default function App() {
   const [prices, setPrices] = useState<PriceRecord[]>(initialPrices);
   const [partners, setPartners] = useState<Partner[]>(initialPartners);
   const [documents, setDocuments] = useState<Document[]>(initialDocuments);
+  const [brands, setBrands] = useState<Brand[]>(initialBrands);
+  const [locations, setLocations] = useState<Location[]>(initialLocations);
 
   // Modal State
   const [selectedProduct, setSelectedProduct] = useState<ProductView | null>(null);
@@ -44,24 +46,47 @@ export default function App() {
 
       // Find prices
       const priceRecord = prices.find(p => p.productId === item.id);
+      
+      // Find brand and location
+      const brandName = brands.find(b => b.id === item.brandId)?.name || 'Неизвестно';
+      const locationName = item.locationId ? (locations.find(l => l.id === item.locationId)?.name || 'Неизвестно') : null;
 
       return {
         ...item,
+        brand: brandName,
+        location: locationName,
         qty: currentQty,
         purchasePrice: priceRecord?.purchasePrice || 0,
         sellingPrice: priceRecord?.sellingPrice || 0,
       };
     });
-  }, [catalog, stock, prices]);
+  }, [catalog, stock, prices, brands, locations]);
 
   const handleSaveProduct = (updatedProductView: ProductView) => {
+    // Find or create brand
+    let brandId = brands.find(b => b.name === updatedProductView.brand)?.id;
+    if (!brandId) {
+      brandId = `b${Date.now()}`;
+      setBrands(prev => [...prev, { id: brandId!, name: updatedProductView.brand }]);
+    }
+
+    // Find or create location
+    let locationId = null;
+    if (updatedProductView.location) {
+      locationId = locations.find(l => l.name === updatedProductView.location)?.id;
+      if (!locationId) {
+        locationId = `loc${Date.now()}`;
+        setLocations(prev => [...prev, { id: locationId!, name: updatedProductView.location! }]);
+      }
+    }
+
     // Update Catalog
     setCatalog(prev => prev.map(c => c.id === updatedProductView.id ? {
       id: updatedProductView.id,
       article: updatedProductView.article,
-      brand: updatedProductView.brand,
+      brandId: brandId!,
       name: updatedProductView.name,
-      location: updatedProductView.location,
+      locationId: locationId,
       comment: updatedProductView.comment,
       type: updatedProductView.type,
       parentId: updatedProductView.parentId,
@@ -144,6 +169,39 @@ export default function App() {
     }
   };
 
+  const handleRollbackDocument = (documentId: string) => {
+    const docToRollback = documents.find(d => d.id === documentId);
+    if (!docToRollback) return;
+
+    // Restore stock
+    setStock(prevStock => {
+      let newStock = [...prevStock];
+      
+      docToRollback.rows.forEach(row => {
+        const existingStockIndex = newStock.findIndex(s => s.productId === row.productId);
+        // Reverse the quantity change
+        const qtyChange = docToRollback.type === 'expense' ? row.qty : -row.qty;
+        
+        if (existingStockIndex >= 0) {
+          newStock[existingStockIndex] = {
+            ...newStock[existingStockIndex],
+            qty: newStock[existingStockIndex].qty + qtyChange
+          };
+        } else {
+          newStock.push({
+            productId: row.productId,
+            qty: qtyChange
+          });
+        }
+      });
+      
+      return newStock;
+    });
+
+    // Remove document
+    setDocuments(prevDocs => prevDocs.filter(d => d.id !== documentId));
+  };
+
   const handleAddPhantom = (parentId: string, sku: string, price: number) => {
     const newId = `p${Date.now()}`;
     const parentProduct = catalog.find(c => c.id === parentId);
@@ -153,9 +211,9 @@ export default function App() {
     const newPhantom: CatalogItem = {
       id: newId,
       article: sku,
-      brand: `${parentProduct.brand} (Фантом)`,
+      brandId: parentProduct.brandId,
       name: `${parentProduct.name} (кросс)`,
-      location: parentProduct.location,
+      locationId: null, // Phantoms usually don't have a physical location
       type: 'phantom',
       parentId: parentId
     };
@@ -203,8 +261,10 @@ export default function App() {
             <ExpenseView 
               clients={clients} 
               products={productsView}
+              documents={documents.filter(d => d.type === 'expense')}
               onAddClient={(name) => handleAddPartner(name, 'client')} 
               onSaveDocument={handleSaveDocument}
+              onRollbackDocument={handleRollbackDocument}
             />
           )}
           
@@ -219,6 +279,8 @@ export default function App() {
         <ProductModal 
           product={selectedProduct} 
           allProducts={productsView}
+          brands={brands}
+          locations={locations}
           onClose={() => setSelectedProduct(null)}
           onSave={handleSaveProduct}
           onAddPhantom={handleAddPhantom}
