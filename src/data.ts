@@ -74,5 +74,37 @@ export const initialPartners: Partner[] = [
   { id: 'c3', name: 'ООО АвтоВектор', type: 'client' },
 ];
 
-export const initialDocuments: Document[] = [];
+export const initialDocuments: Document[] = [
+  {
+    id: 'doc_1710840000000',
+    type: 'expense',
+    date: new Date(Date.now() - 86400000 * 2).toISOString(), // 2 дня назад
+    partnerId: 'c1', // Иван (Розница)
+    rows: [
+      { productId: '1', qty: 2, price: 1500 }
+    ],
+    totalAmount: 3000
+  },
+  {
+    id: 'doc_1710926400000',
+    type: 'expense',
+    date: new Date(Date.now() - 86400000 * 1).toISOString(), // 1 день назад
+    partnerId: 'c2', // Автосервис "У Гаража"
+    rows: [
+      { productId: '1', qty: 1, price: 1500 },
+      { productId: '3', qty: 2, price: 800 }
+    ],
+    totalAmount: 3100
+  },
+  {
+    id: 'doc_1711012800000',
+    type: 'expense',
+    date: new Date().toISOString(), // сегодня
+    partnerId: 'c3', // ООО АвтоВектор
+    rows: [
+      { productId: '3', qty: 1, price: 800 }
+    ],
+    totalAmount: 800
+  }
+];
 
