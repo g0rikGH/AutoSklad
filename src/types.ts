@@ -62,9 +62,11 @@ export interface Document {
 export interface ProductView {
   id: string;
   article: string;
+  brandId: string;
   brand: string;
   name: string;
-  location: string;
+  locationId: string | null;
+  location: string | null;
   comment?: string;
   type: 'real' | 'phantom';
   parentId?: string;

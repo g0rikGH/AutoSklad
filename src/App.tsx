@@ -53,7 +53,9 @@ export default function App() {
 
       return {
         ...item,
+        brandId: item.brandId,
         brand: brandName,
+        locationId: item.locationId,
         location: locationName,
         qty: currentQty,
         purchasePrice: priceRecord?.purchasePrice || 0,
@@ -63,30 +65,27 @@ export default function App() {
   }, [catalog, stock, prices, brands, locations]);
 
   const handleSaveProduct = (updatedProductView: ProductView) => {
-    // Find or create brand
-    let brandId = brands.find(b => b.name === updatedProductView.brand)?.id;
-    if (!brandId) {
-      brandId = `b${Date.now()}`;
-      setBrands(prev => [...prev, { id: brandId!, name: updatedProductView.brand }]);
+    // Handle brand creation if it's a temporary ID
+    let finalBrandId = updatedProductView.brandId;
+    if (finalBrandId.startsWith('temp_b_')) {
+      finalBrandId = `b${Date.now()}`;
+      setBrands(prev => [...prev, { id: finalBrandId, name: updatedProductView.brand }]);
     }
 
-    // Find or create location
-    let locationId = null;
-    if (updatedProductView.location) {
-      locationId = locations.find(l => l.name === updatedProductView.location)?.id;
-      if (!locationId) {
-        locationId = `loc${Date.now()}`;
-        setLocations(prev => [...prev, { id: locationId!, name: updatedProductView.location! }]);
-      }
+    // Handle location creation if it's a temporary ID
+    let finalLocationId = updatedProductView.locationId;
+    if (finalLocationId && finalLocationId.startsWith('temp_l_')) {
+      finalLocationId = `loc${Date.now()}`;
+      setLocations(prev => [...prev, { id: finalLocationId!, name: updatedProductView.location! }]);
     }
 
     // Update Catalog
     setCatalog(prev => prev.map(c => c.id === updatedProductView.id ? {
       id: updatedProductView.id,
       article: updatedProductView.article,
-      brandId: brandId!,
+      brandId: finalBrandId,
       name: updatedProductView.name,
-      locationId: locationId,
+      locationId: finalLocationId,
       comment: updatedProductView.comment,
       type: updatedProductView.type,
       parentId: updatedProductView.parentId,

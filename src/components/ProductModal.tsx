@@ -39,14 +39,16 @@ export default function ProductModal({ product, allProducts, brands, locations, 
   const handleAddBrand = () => {
     const name = prompt('Введите название нового бренда:');
     if (name && name.trim()) {
-      setEditedProduct({ ...editedProduct, brand: name.trim() });
+      const tempId = `temp_b_${Date.now()}`;
+      setEditedProduct({ ...editedProduct, brandId: tempId, brand: name.trim() });
     }
   };
 
   const handleAddLocation = () => {
     const name = prompt('Введите название новой полки/стеллажа:');
     if (name && name.trim()) {
-      setEditedProduct({ ...editedProduct, location: name.trim() });
+      const tempId = `temp_l_${Date.now()}`;
+      setEditedProduct({ ...editedProduct, locationId: tempId, location: name.trim() });
     }
   };
 
@@ -74,14 +76,22 @@ export default function ProductModal({ product, allProducts, brands, locations, 
               <div className="flex items-center gap-2 mt-2">
                 <Building2 className="w-4 h-4 text-slate-400" />
                 <select
-                  value={editedProduct.brand}
-                  onChange={(e) => setEditedProduct({...editedProduct, brand: e.target.value})}
+                  value={editedProduct.brandId}
+                  onChange={(e) => {
+                    const selectedBrand = brands.find(b => b.id === e.target.value);
+                    if (selectedBrand) {
+                      setEditedProduct({...editedProduct, brandId: selectedBrand.id, brand: selectedBrand.name});
+                    }
+                  }}
                   className="px-2 py-1 bg-slate-50 border border-slate-200 rounded text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  <option value={editedProduct.brand}>{editedProduct.brand}</option>
-                  {brands.filter(b => b.name !== editedProduct.brand).map(b => (
-                    <option key={b.id} value={b.name}>{b.name}</option>
+                  {brands.map(b => (
+                    <option key={b.id} value={b.id}>{b.name}</option>
                   ))}
+                  {/* Show temporary brand if added via prompt but not saved yet */}
+                  {!brands.find(b => b.id === editedProduct.brandId) && (
+                    <option value={editedProduct.brandId}>{editedProduct.brand}</option>
+                  )}
                 </select>
                 <button onClick={handleAddBrand} className="p-1 text-blue-600 hover:bg-blue-50 rounded transition-colors" title="Добавить бренд">
                   <Plus className="w-4 h-4" />
@@ -140,17 +150,28 @@ export default function ProductModal({ product, allProducts, brands, locations, 
               </label>
               <div className="flex items-center gap-2">
                 <select
-                  value={editedProduct.location || ''}
-                  onChange={(e) => setEditedProduct({...editedProduct, location: e.target.value || null})}
+                  value={editedProduct.locationId || ''}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (!val) {
+                      setEditedProduct({...editedProduct, locationId: null, location: null});
+                    } else {
+                      const selectedLoc = locations.find(l => l.id === val);
+                      if (selectedLoc) {
+                        setEditedProduct({...editedProduct, locationId: selectedLoc.id, location: selectedLoc.name});
+                      }
+                    }
+                  }}
                   className="flex-1 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">-- Нет полки --</option>
-                  {editedProduct.location && !locations.find(l => l.name === editedProduct.location) && (
-                    <option value={editedProduct.location}>{editedProduct.location}</option>
-                  )}
                   {locations.map(l => (
-                    <option key={l.id} value={l.name}>{l.name}</option>
+                    <option key={l.id} value={l.id}>{l.name}</option>
                   ))}
+                  {/* Show temporary location if added via prompt but not saved yet */}
+                  {editedProduct.locationId && !locations.find(l => l.id === editedProduct.locationId) && (
+                    <option value={editedProduct.locationId}>{editedProduct.location}</option>
+                  )}
                 </select>
                 <button onClick={handleAddLocation} className="p-2 border border-slate-300 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors" title="Добавить полку">
                   <Plus className="w-4 h-4" />
