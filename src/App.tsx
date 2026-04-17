@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Sidebar from './components/Sidebar';
 import StockView from './components/StockView';
 import IncomeView from './components/IncomeView';
@@ -6,20 +6,22 @@ import ExpenseView from './components/ExpenseView';
 import ReportsView from './components/ReportsView';
 import PriceView from './components/PriceView';
 import ProductModal from './components/ProductModal';
-import { TabId, CatalogItem, StockRecord, PriceRecord, Partner, Document, ProductView, Brand, Location } from './types';
-import { initialCatalog, initialStock, initialPrices, initialPartners, initialDocuments, initialBrands, initialLocations } from './data';
+import { TabId, Partner, Document, ProductView, Brand, Location } from './types';
+import api from './api/axios'; // Подключаем наш axios-клиент
 
-export default function App() {
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { ProtectedRoute } from './components/ProtectedRoute';
+import { Login } from './pages/Login';
+
+function Dashboard() {
   const [activeTab, setActiveTab] = useState<TabId>('stock');
   
-  // Global State (Normalized)
-  const [catalog, setCatalog] = useState<CatalogItem[]>(initialCatalog);
-  const [stock, setStock] = useState<StockRecord[]>(initialStock);
-  const [prices, setPrices] = useState<PriceRecord[]>(initialPrices);
-  const [partners, setPartners] = useState<Partner[]>(initialPartners);
-  const [documents, setDocuments] = useState<Document[]>(initialDocuments);
-  const [brands, setBrands] = useState<Brand[]>(initialBrands);
-  const [locations, setLocations] = useState<Location[]>(initialLocations);
+  // Global State (API Driven)
+  const [productsView, setProductsView] = useState<ProductView[]>([]);
+  const [partners, setPartners] = useState<Partner[]>([]);
+  const [documents, setDocuments] = useState<Document[]>([]);
+  const [brands, setBrands] = useState<Brand[]>([]);
+  const [locations, setLocations] = useState<Location[]>([]);
 
   // Modal State
   const [selectedProduct, setSelectedProduct] = useState<ProductView | null>(null);
@@ -33,36 +35,42 @@ export default function App() {
     price: 'bg-amber-50/50',
   };
 
-  // Join data to create ProductView array for UI components
-  const productsView: ProductView[] = useMemo(() => {
-    return catalog.map(item => {
-      // Find stock. If phantom, find stock of parent.
-      let currentQty = 0;
-      if (item.type === 'real') {
-        currentQty = stock.find(s => s.productId === item.id)?.qty || 0;
-      } else if (item.type === 'phantom' && item.parentId) {
-        currentQty = stock.find(s => s.productId === item.parentId)?.qty || 0;
-      }
+  // Шаг 1: Загрузка Каталога (GET)
+  const fetchCatalog = async () => {
+    try {
+      const res = await api.get('/catalog');
+      // Бэкенд возвращает сразу готовый плоский массив ProductView!
+      setProductsView(res.data.data);
+    } catch (error) {
+      console.error('Ошибка загрузки каталога:', error);
+    }
+  };
 
-      // Find prices
-      const priceRecord = prices.find(p => p.productId === item.id);
-      
-      // Find brand and location
-      const brandName = brands.find(b => b.id === item.brandId)?.name || 'Неизвестно';
-      const locationName = item.locationId ? (locations.find(l => l.id === item.locationId)?.name || 'Неизвестно') : null;
+  // Шаг 3: Справочники и Документы (GET)
+  const fetchReferences = async () => {
+    try {
+      // Параллельно запрашиваем остальные данные.
+      // (Примечание: предполагается, что на бэкенде добавлены/работают эти GET роуты)
+      const [brandsRes, locRes, partnersRes, docsRes] = await Promise.all([
+        api.get('/catalog/brands').catch(() => ({ data: { data: [] } })),
+        api.get('/catalog/locations').catch(() => ({ data: { data: [] } })),
+        api.get('/partners').catch(() => ({ data: { data: [] } })),
+        api.get('/documents').catch(() => ({ data: { data: [] } }))
+      ]);
+      setBrands(brandsRes.data?.data || []);
+      setLocations(locRes.data?.data || []);
+      setPartners(partnersRes.data?.data || []);
+      setDocuments(docsRes.data?.data || []);
+    } catch (error) {
+      console.error('Ошибка загрузки справочников:', error);
+    }
+  };
 
-      return {
-        ...item,
-        brandId: item.brandId,
-        brand: brandName,
-        locationId: item.locationId,
-        location: locationName,
-        qty: currentQty,
-        purchasePrice: priceRecord?.purchasePrice || 0,
-        sellingPrice: priceRecord?.sellingPrice || 0,
-      };
-    });
-  }, [catalog, stock, prices, brands, locations]);
+  // Загружаем данные при старте компонента
+  useEffect(() => {
+    fetchCatalog();
+    fetchReferences();
+  }, []);
 
   const handleSaveProduct = (updatedProductView: ProductView) => {
     // Handle brand creation if it's a temporary ID
@@ -117,54 +125,36 @@ export default function App() {
     setPartners([...partners, newPartner]);
   };
 
-  const handleSaveDocument = (doc: Document) => {
-    setDocuments([...documents, doc]);
-    
-    // Update stock based on document
-    setStock(prevStock => {
-      let newStock = [...prevStock];
-      
-      doc.rows.forEach(row => {
-        const existingStockIndex = newStock.findIndex(s => s.productId === row.productId);
-        const qtyChange = doc.type === 'income' ? row.qty : -row.qty;
-        
-        if (existingStockIndex >= 0) {
-          newStock[existingStockIndex] = {
-            ...newStock[existingStockIndex],
-            qty: newStock[existingStockIndex].qty + qtyChange
-          };
-        } else {
-          newStock.push({
-            productId: row.productId,
-            qty: qtyChange
-          });
-        }
-      });
-      
-      return newStock;
-    });
+  // Шаг 2: Проведение Накладной (POST)
+  const handleSaveDocument = async (doc: Document) => {
+    try {
+      // Формируем payload на основе нашего DTO (CreateDocumentDto)
+      const payload = {
+        type: doc.type.toUpperCase(), // 'income' | 'expense' -> 'INCOME' | 'EXPENSE'
+        partnerId: doc.partnerId,
+        totalAmount: doc.totalAmount,
+        rows: doc.rows.map(row => ({
+          productId: row.productId,
+          qty: row.qty,
+          price: row.price
+        }))
+      };
 
-    // If it's an income document, update purchase prices
-    if (doc.type === 'income') {
-      setPrices(prevPrices => {
-        let newPrices = [...prevPrices];
-        doc.rows.forEach(row => {
-          const existingPriceIndex = newPrices.findIndex(p => p.productId === row.productId);
-          if (existingPriceIndex >= 0) {
-            newPrices[existingPriceIndex] = {
-              ...newPrices[existingPriceIndex],
-              purchasePrice: row.price // Update purchase price to the latest one
-            };
-          } else {
-            newPrices.push({
-              productId: row.productId,
-              purchasePrice: row.price,
-              sellingPrice: row.price * 1.5 // Default markup
-            });
-          }
-        });
-        return newPrices;
-      });
+      // Отправляем запрос
+      await api.post('/documents', payload);
+      
+      // Если запрос прошел успешно
+      alert(`Документ успешно проведен!`);
+      
+      // Обновляем состояние каталога (остатки и цены) и историю документов
+      fetchCatalog();
+      fetchReferences(); 
+
+    } catch (error: any) {
+      // Отлавливаем ошибку, включая тупиковые CHECK (недостаток товара)
+      const errorMessage = error.response?.data?.message || 'Неизвестная ошибка при проведении документа';
+      alert(`Ошибка: ${errorMessage}`);
+      console.error('Order creation error:', error);
     }
   };
 
@@ -287,5 +277,18 @@ export default function App() {
         />
       )}
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <Router>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route element={<ProtectedRoute />}>
+          <Route path="/" element={<Dashboard />} />
+        </Route>
+      </Routes>
+    </Router>
   );
 }

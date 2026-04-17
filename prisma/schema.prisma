@@ -1,0 +1,120 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String     @id @default(uuid())
+  email        String     @unique
+  passwordHash String     @map("password_hash")
+  name         String
+  role         String     @default("MANAGER") // 'ADMIN' | 'MANAGER'
+  
+  // Связь: один юзер может провести много документов
+  documents    Document[]
+
+  @@map("users")
+}
+
+model Partner {
+  id        String     @id @default(uuid())
+  name      String
+  type      String     // 'SUPPLIER' | 'CLIENT'
+  documents Document[]
+
+  @@map("partners")
+}
+
+model Brand {
+  id        String    @id @default(uuid())
+  name      String
+  catalog   Catalog[]
+
+  @@map("brands")
+}
+
+model Location {
+  id        String    @id @default(uuid())
+  name      String
+  catalog   Catalog[]
+
+  @@map("locations")
+}
+
+model Catalog {
+  id           String   @id @default(uuid())
+  article      String
+  name         String
+  type         String   // 'REAL' | 'PHANTOM'
+  
+  brandId      String?  @map("brand_id")
+  brand        Brand?   @relation(fields: [brandId], references: [id])
+  
+  locationId   String?  @map("location_id")
+  location     Location? @relation(fields: [locationId], references: [id])
+  
+  comment      String?
+  
+  parentId     String?  @map("parent_id")
+  parent       Catalog? @relation("PhantomParent", fields: [parentId], references: [id])
+  phantoms     Catalog[] @relation("PhantomParent")
+  
+  stockBalance StockBalance?
+  currentPrice CurrentPrice?
+  documentRows DocumentRow[]
+
+  @@map("catalog")
+}
+
+model StockBalance {
+  productId String  @id @map("product_id")
+  qty       Int     @default(0)
+  product   Catalog @relation(fields: [productId], references: [id])
+
+  @@map("stock_balances")
+}
+
+model CurrentPrice {
+  productId     String  @id @map("product_id")
+  purchasePrice Float   @default(0) @map("purchase_price")
+  sellingPrice  Float   @default(0) @map("selling_price")
+  product       Catalog @relation(fields: [productId], references: [id])
+
+  @@map("current_prices")
+}
+
+model Document {
+  id          String        @id @default(uuid())
+  type        String        // 'INCOME' | 'EXPENSE'
+  date        DateTime      @default(now()) @map("doc_date")
+  
+  partnerId   String        @map("partner_id")
+  partner     Partner       @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+  
+  totalAmount Float         @map("total_amount")
+  
+  userId      String        @map("user_id")
+  user        User          @relation(fields: [userId], references: [id], onDelete: Restrict)
+  
+  rows        DocumentRow[]
+
+  @@map("documents")
+}
+
+model DocumentRow {
+  id         String   @id @default(uuid())
+  documentId String   @map("document_id")
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  
+  productId  String   @map("product_id")
+  product    Catalog  @relation(fields: [productId], references: [id])
+  
+  qty        Int
+  price      Float
+
+  @@map("document_rows")
+}
