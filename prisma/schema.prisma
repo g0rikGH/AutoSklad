@@ -21,10 +21,11 @@ model User {
 }
 
 model Partner {
-  id        String     @id @default(uuid())
-  name      String
-  type      String     // 'SUPPLIER' | 'CLIENT'
-  documents Document[]
+  id           String     @id @default(uuid())
+  name         String
+  type         String     // 'SUPPLIER' | 'CLIENT'
+  importConfig String?    // JSON string for column mappings configuration
+  documents    Document[]
 
   @@map("partners")
 }

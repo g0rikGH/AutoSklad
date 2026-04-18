@@ -40,6 +40,7 @@ export interface Partner {
   id: string;
   name: string;
   type: 'supplier' | 'client';
+  importConfig?: string;
 }
 
 // 5. Documents (Transactions)

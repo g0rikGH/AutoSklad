@@ -125,6 +125,17 @@ function Dashboard() {
     }
   };
 
+  const handleUpdatePartnerConfig = async (id: string, importConfig: string) => {
+    try {
+      const res = await api.put(`/partners/${id}/config`, { importConfig });
+      if (res.data.success) {
+        setPartners(prev => prev.map(p => p.id === id ? { ...p, importConfig } : p));
+      }
+    } catch (error) {
+      console.error('Ошибка обновления конфигурации контрагента:', error);
+    }
+  };
+
   const handleCreateMissingProduct = async (data: { article: string; brandName: string; productName: string; parentId?: string }) => {
     const { article, brandName, productName, parentId } = data;
     try {
@@ -360,6 +371,7 @@ function Dashboard() {
               onAddClient={(name) => handleAddPartner(name, 'client')} 
               onSaveDocument={handleSaveDocument}
               onRollbackDocument={handleRollbackDocument}
+              onUpdateClientConfig={handleUpdatePartnerConfig}
             />
           )}
           

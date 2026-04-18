@@ -19,4 +19,11 @@ export class PartnersService {
       }
     });
   }
+
+  async updateConfig(id: string, importConfig: string) {
+    return this.prisma.partner.update({
+      where: { id },
+      data: { importConfig }
+    });
+  }
 }

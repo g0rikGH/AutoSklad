@@ -352,7 +352,7 @@ export default function ProductModal({ product, allProducts, brands, locations, 
                               className="font-mono font-bold text-blue-600 hover:text-blue-800 bg-slate-100 hover:bg-blue-50 px-2 py-1 rounded transition-colors text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
                               title="Открыть документ"
                             >
-                              {record.docNumber || record.docId.slice(0, 8)}
+                              {record.docNumber ? `№ ${record.docNumber}` : record.docId.slice(0, 8)}
                             </button>
                           ) : (
                             <span className="text-slate-400">-</span>

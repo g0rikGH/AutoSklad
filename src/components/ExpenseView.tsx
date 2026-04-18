@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import * as XLSX from 'xlsx';
 import { Partner, Document, ProductView } from '../types';
 import { FolderOpen, Plus, FileSpreadsheet, Columns, RotateCcw, CheckCheck, Eye, TableProperties, History, X, Trash2 } from 'lucide-react';
 
@@ -6,9 +7,10 @@ interface ExpenseViewProps {
   clients: Partner[];
   products: ProductView[];
   documents: Document[];
-  onAddClient: (name: string) => void;
+  onAddClient: (name: string) => Promise<Partner | undefined>;
   onSaveDocument: (doc: Document) => Promise<{ success: boolean; error?: string }>;
   onRollbackDocument: (id: string) => void;
+  onUpdateClientConfig?: (id: string, config: string) => Promise<void>;
 }
 
 type Step = 'upload' | 'mapping' | 'reconcile';
@@ -24,10 +26,13 @@ interface ReconcileItem {
   shipQty: number;
 }
 
-export default function ExpenseView({ clients, products, documents, onAddClient, onSaveDocument, onRollbackDocument }: ExpenseViewProps) {
+export default function ExpenseView({ clients, products, documents, onAddClient, onSaveDocument, onRollbackDocument, onUpdateClientConfig }: ExpenseViewProps) {
   const [step, setStep] = useState<Step>('upload');
   const [selectedClient, setSelectedClient] = useState('');
+  const [isAddClientOpen, setIsAddClientOpen] = useState(false);
+  const [newClientName, setNewClientName] = useState('');
   const [fileName, setFileName] = useState('');
+  const [fileData, setFileData] = useState<any[][]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Mapping state
@@ -41,9 +46,35 @@ export default function ExpenseView({ clients, products, documents, onAddClient,
   const [historyFilterClient, setHistoryFilterClient] = useState<string>('all');
   const [viewingDoc, setViewingDoc] = useState<Document | null>(null);
 
+  const handleClientSelect = (clientId: string) => {
+    setSelectedClient(clientId);
+    const client = clients.find(c => c.id === clientId);
+    if (client && client.importConfig) {
+      try {
+        const config = JSON.parse(client.importConfig);
+        if (config.startRow) setStartRow(config.startRow);
+        if (config.mapping) setMapping(config.mapping);
+      } catch (e) {
+        console.error('Failed to parse import config', e);
+      }
+    }
+  };
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      setFileName(e.target.files[0].name);
+      const file = e.target.files[0];
+      setFileName(file.name);
+      
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const data = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+        setFileData(data);
+      };
+      reader.readAsBinaryString(file);
     }
   };
 
@@ -67,40 +98,69 @@ export default function ExpenseView({ clients, products, documents, onAddClient,
   };
 
   const handleProceedToReconcile = () => {
-    // Mock data generation based on the original HTML
-    // In a real app, this would parse the uploaded file and match with products
-    const mockRequested = [
-      { article: "L06L109259E", reqQty: 10 },
-      { article: "15208-65F0A", reqQty: 10 },
-      { article: "06L109259a", reqQty: 5 }
-    ];
+    const getColumnIndex = (type: string) => {
+      const entry = Object.entries(mapping).find(([col, val]) => val === type);
+      if (!entry) return -1;
+      return entry[0].charCodeAt(0) - 65; // A=0, B=1...
+    };
 
-    const reconcileItems: ReconcileItem[] = mockRequested.map(req => {
-      const product = products.find(p => p.article === req.article);
+    const artIdx = getColumnIndex('colArticle');
+    const reqQtyIdx = getColumnIndex('colQty');
+
+    if (artIdx === -1 || reqQtyIdx === -1) {
+      alert('Необходимо выбрать колонки для Артикула и Количества!');
+      return;
+    }
+
+    const dataRows = fileData.slice(startRow - 1);
+    const reconcileItems: ReconcileItem[] = [];
+
+    for (let i = 0; i < dataRows.length; i++) {
+      const row = dataRows[i];
+      if (!row || row.length === 0) continue;
+      
+      const article = String(row[artIdx] || '').trim();
+      const reqQtyVal = String(row[reqQtyIdx] || '0').replace(/\s+/g, '').replace(/[^\d.-]/g, '');
+      const reqQty = parseInt(reqQtyVal) || 0;
+
+      if (!article) continue;
+
+      const product = products.find(p => p.article === article);
       if (product) {
-        return {
+        reconcileItems.push({
           productId: product.id,
           sku: product.article,
           brand: product.brand,
           name: product.name,
-          reqQty: req.reqQty,
+          reqQty: reqQty,
           stockQty: product.qty,
           price: product.sellingPrice,
-          shipQty: Math.min(req.reqQty, product.qty) // Default to max available
-        };
+          shipQty: Math.min(reqQty, product.qty)
+        });
       } else {
-        return {
+        reconcileItems.push({
           productId: 'unknown',
-          sku: req.article,
+          sku: article,
           brand: 'Неизвестно',
-          name: 'Товар не найден',
-          reqQty: req.reqQty,
+          name: 'Товар отсутствует в базе',
+          reqQty: reqQty,
           stockQty: 0,
           price: 0,
           shipQty: 0
-        };
+        });
       }
-    });
+    }
+
+    if (reconcileItems.length === 0) {
+      alert('Не удалось найти данные для сверки. Проверьте настройки колонок.');
+      return;
+    }
+
+    // Save config for the selected client
+    if (onUpdateClientConfig) {
+      const configObj = { startRow, mapping };
+      onUpdateClientConfig(selectedClient, JSON.stringify(configObj));
+    }
 
     setItems(reconcileItems);
     setStep('reconcile');
@@ -112,7 +172,7 @@ export default function ExpenseView({ clients, products, documents, onAddClient,
     const max = newItems[index].stockQty;
     
     if (numVal > max) {
-      alert(`На складе всего ${max} шт.`);
+      alert(`Внимание! Запрошено к отгрузке ${numVal}, но на складе доступно всего ${max} шт.`);
       numVal = max;
     } else if (numVal < 0) {
       numVal = 0;
@@ -160,11 +220,13 @@ export default function ExpenseView({ clients, products, documents, onAddClient,
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handleAddClientClick = () => {
-    const name = prompt('Введите ФИО/Название нового покупателя:');
-    if (name && name.trim()) {
-      onAddClient(name.trim());
-      // We can't automatically select the new client here because the ID is generated in App.tsx
+  const handleAddClientConfirm = async () => {
+    if (!newClientName.trim()) return;
+    const newPartner = await onAddClient(newClientName.trim());
+    if (newPartner) {
+      setSelectedClient(newPartner.id);
+      setNewClientName('');
+      setIsAddClientOpen(false);
     }
   };
 
@@ -178,27 +240,60 @@ export default function ExpenseView({ clients, products, documents, onAddClient,
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
           <h3 className="text-lg font-semibold text-slate-800 mb-6">Загрузка файла-заявки от клиента</h3>
 
-          <div className="flex items-center gap-4 mb-6">
-            <label className="text-sm font-medium text-slate-700 whitespace-nowrap">Покупатель:</label>
-            <div className="flex gap-2 max-w-md w-full">
-              <select
-                value={selectedClient}
-                onChange={(e) => setSelectedClient(e.target.value)}
-                className="flex-1 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="" disabled>Выберите покупателя...</option>
-                {clients.map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
-              <button 
-                onClick={handleAddClientClick}
-                className="px-3 py-2 border border-slate-300 rounded-lg text-slate-600 hover:bg-slate-50 transition-colors"
-                title="Добавить покупателя"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
+          <div className="flex flex-col gap-4 mb-6">
+            <div className="flex items-center gap-4">
+              <label className="text-sm font-medium text-slate-700 whitespace-nowrap">Покупатель:</label>
+              <div className="flex gap-2 max-w-md w-full">
+                <select
+                  value={selectedClient}
+                  onChange={(e) => handleClientSelect(e.target.value)}
+                  className="flex-1 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="" disabled>Выберите покупателя...</option>
+                  {clients.map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+                <button 
+                  onClick={() => setIsAddClientOpen(!isAddClientOpen)}
+                  className="px-3 py-2 border border-slate-300 rounded-lg text-slate-600 hover:bg-slate-50 transition-colors"
+                  title="Добавить покупателя"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+              </div>
             </div>
+            
+            {isAddClientOpen && (
+              <div className="flex items-center gap-4 animate-in fade-in slide-in-from-top-2 duration-200">
+                <div className="text-sm text-slate-500 whitespace-nowrap hidden sm:block">Новый покупатель:</div>
+                <div className="flex gap-2 max-w-md w-full pl-[95px] sm:pl-0">
+                  <input
+                    type="text"
+                    value={newClientName}
+                    onChange={(e) => setNewClientName(e.target.value)}
+                    placeholder="Название организации..."
+                    autoFocus
+                    onKeyDown={(e) => e.key === 'Enter' && handleAddClientConfirm()}
+                    className="flex-1 px-3 py-1.5 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <button 
+                    onClick={handleAddClientConfirm}
+                    className="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                    title="Сохранить"
+                  >
+                    <CheckCheck className="w-4 h-4" />
+                  </button>
+                  <button 
+                    onClick={() => setIsAddClientOpen(false)}
+                    className="px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 transition-colors"
+                    title="Отмена"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-4">
@@ -288,20 +383,22 @@ export default function ExpenseView({ clients, products, documents, onAddClient,
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 bg-white">
-                <tr className="hover:bg-slate-50">
-                  <td className="py-2 border-r border-slate-200">L06L109259E</td>
-                  <td className="py-2 border-r border-slate-200">VAG</td>
-                  <td className="py-2 border-r border-slate-200">Магнит клапана фазорегулятора</td>
-                  <td className="py-2 border-r border-slate-200">10</td>
-                  <td className="py-2">1500</td>
-                </tr>
-                <tr className="hover:bg-slate-50">
-                  <td className="py-2 border-r border-slate-200">15208-65F0A</td>
-                  <td className="py-2 border-r border-slate-200">Nissan</td>
-                  <td className="py-2 border-r border-slate-200">Фильтр масляный</td>
-                  <td className="py-2 border-r border-slate-200">5</td>
-                  <td className="py-2">800</td>
-                </tr>
+                {fileData.slice(startRow - 1, startRow + 3).map((row, idx) => (
+                  <tr key={idx} className="hover:bg-slate-50">
+                    <td className="py-2 border-r border-slate-200">{String(row[0] || '')}</td>
+                    <td className="py-2 border-r border-slate-200">{String(row[1] || '')}</td>
+                    <td className="py-2 border-r border-slate-200">{String(row[2] || '')}</td>
+                    <td className="py-2 border-r border-slate-200">{String(row[3] || '')}</td>
+                    <td className="py-2">{String(row[4] || '')}</td>
+                  </tr>
+                ))}
+                {fileData.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="py-6 text-center text-slate-500">
+                      Файл пуст или еще не загружен
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -463,7 +560,7 @@ export default function ExpenseView({ clients, products, documents, onAddClient,
                     return (
                       <tr key={doc.id} className="hover:bg-slate-50 transition-colors">
                         <td className="py-3 px-4">{new Date(doc.date).toLocaleString('ru-RU')}</td>
-                        <td className="py-3 px-4 font-medium text-slate-700">{doc.id}</td>
+                        <td className="py-3 px-4 font-medium text-slate-700">{doc.number ? `№ ${doc.number}` : doc.id}</td>
                         <td className="py-3 px-4">{client?.name || 'Неизвестный покупатель'}</td>
                         <td className="py-3 px-4 text-right font-bold text-emerald-600">{doc.totalAmount} ₽</td>
                         <td className="py-3 px-4 text-center">

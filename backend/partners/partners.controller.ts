@@ -1,7 +1,7 @@
-import { Controller, Get, Post, Body, UseGuards, Inject } from '@nestjs/common';
+import { Controller, Get, Post, Put, Param, Body, UseGuards, Inject } from '@nestjs/common';
 import { PartnersService } from './partners.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { IsString, IsIn } from 'class-validator';
+import { IsString, IsIn, IsOptional } from 'class-validator';
 
 class CreatePartnerDto {
   @IsString()
@@ -10,6 +10,11 @@ class CreatePartnerDto {
   @IsString()
   @IsIn(['SUPPLIER', 'CLIENT', 'supplier', 'client'])
   type: 'SUPPLIER' | 'CLIENT' | 'supplier' | 'client';
+}
+
+class UpdateConfigDto {
+  @IsString()
+  importConfig: string;
 }
 
 @Controller('partners')
@@ -34,6 +39,15 @@ export class PartnersController {
       success: true, 
       data: { ...partner, type: partner.type.toLowerCase() } 
     };
+  }
+
+  @Put(':id/config')
+  async updateConfig(@Param('id') id: string, @Body() body: UpdateConfigDto) {
+    const partner = await this.partnersService.updateConfig(id, body.importConfig);
+    return {
+      success: true,
+      data: { ...partner, type: partner.type.toLowerCase() }
+    }
   }
 }
 

@@ -35,29 +35,43 @@ export class DocumentsService {
           include: { rows: true },
         });
 
-        // Group rows by productId to avoid multiple upserts for the same product in a loop
-        // If the same product is listed multiple times, their quantities should be aggregated
-        const productAggr = new Map<string, { qty: number, price: number }>();
+        // Get all products to check if they are PHANTOM
+        const productIds = dto.rows.map(r => r.productId);
+        const productsInfo = await tx.catalog.findMany({
+          where: { id: { in: productIds } },
+          select: { id: true, type: true, parentId: true }
+        });
+        const productMap = new Map(productsInfo.map(p => [p.id, p]));
+
+        // Group rows by REAL physical productId for stock updates
+        // If the same physical product is listed multiple times (via itself or phantoms), aggregate
+        const physicalStockAggr = new Map<string, { qty: number, price: number }>();
         for (const row of dto.rows) {
-          if (!productAggr.has(row.productId)) {
-            productAggr.set(row.productId, { qty: 0, price: row.price });
+          const pInfo = productMap.get(row.productId);
+          let targetPhysicalId = row.productId;
+          if (pInfo && pInfo.type === 'PHANTOM' && pInfo.parentId) {
+            targetPhysicalId = pInfo.parentId;
           }
-          productAggr.get(row.productId)!.qty += row.qty;
-          productAggr.get(row.productId)!.price = row.price; // keep the latest price
+
+          if (!physicalStockAggr.has(targetPhysicalId)) {
+            physicalStockAggr.set(targetPhysicalId, { qty: 0, price: row.price });
+          }
+          physicalStockAggr.get(targetPhysicalId)!.qty += row.qty;
+          physicalStockAggr.get(targetPhysicalId)!.price = row.price; // keep the latest price
         }
 
-        for (const [productId, data] of productAggr.entries()) {
+        for (const [physicalId, data] of physicalStockAggr.entries()) {
           if (dto.type === 'INCOME') {
             await tx.stockBalance.upsert({
-              where: { productId: productId },
-              create: { productId: productId, qty: data.qty },
+              where: { productId: physicalId },
+              create: { productId: physicalId, qty: data.qty },
               update: { qty: { increment: data.qty } },
             });
 
             await tx.currentPrice.upsert({
-              where: { productId: productId },
+              where: { productId: physicalId },
               create: {
-                productId: productId,
+                productId: physicalId,
                 purchasePrice: data.price,
                 sellingPrice: data.price * 1.5,
               },
@@ -67,17 +81,17 @@ export class DocumentsService {
             });
           } else if (dto.type === 'EXPENSE') {
             const stock = await tx.stockBalance.findUnique({
-              where: { productId: productId },
+              where: { productId: physicalId },
             });
 
             if (!stock || stock.qty < data.qty) {
               throw new BadRequestException(
-                `Ошибка списания: Недостаточно товара (ID ${productId}) на складе для проведения реализации! Попытка уйти в минус заблокирована.`
+                `Ошибка списания: Недостаточно физического товара (ID ${physicalId}) на складе для проведения реализации! Попытка уйти в минус заблокирована. Запрошено: ${data.qty}, В наличии: ${stock?.qty || 0}`
               );
             }
 
             await tx.stockBalance.update({
-              where: { productId: productId },
+              where: { productId: physicalId },
               data: { qty: { decrement: data.qty } },
             });
           }
@@ -111,19 +125,32 @@ export class DocumentsService {
 
       if (!doc) throw new BadRequestException('Документ не найден');
 
+      const productIds = doc.rows.map(r => r.productId);
+      const productsInfo = await tx.catalog.findMany({
+        where: { id: { in: productIds } },
+        select: { id: true, type: true, parentId: true }
+      });
+      const productMap = new Map(productsInfo.map(p => [p.id, p]));
+
       for (const row of doc.rows) {
+        let physicalId = row.productId;
+        const pInfo = productMap.get(row.productId);
+        if (pInfo && pInfo.type === 'PHANTOM' && pInfo.parentId) {
+          physicalId = pInfo.parentId;
+        }
+
         if (doc.type === 'INCOME') {
-          const stock = await tx.stockBalance.findUnique({ where: { productId: row.productId } });
+          const stock = await tx.stockBalance.findUnique({ where: { productId: physicalId } });
           if (!stock || stock.qty < row.qty) {
             throw new BadRequestException('Невозможно отменить приход: товар уже списан!');
           }
           await tx.stockBalance.update({
-            where: { productId: row.productId },
+            where: { productId: physicalId },
             data: { qty: { decrement: row.qty } }
           });
         } else if (doc.type === 'EXPENSE') {
           await tx.stockBalance.update({
-            where: { productId: row.productId },
+            where: { productId: physicalId },
             data: { qty: { increment: row.qty } }
           });
         }

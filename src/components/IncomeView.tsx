@@ -14,12 +14,13 @@ interface IncomeViewProps {
   onSaveLocations?: (updates: {productId: string, locationName: string}[]) => Promise<void>;
   externalSelectedDocumentId?: string | null;
   onClearExternalDocument?: () => void;
+  onUpdateSupplierConfig?: (id: string, config: string) => Promise<void>;
 }
 
 type TabType = 'new' | 'history';
 type Step = 'upload' | 'mapping';
 
-export default function IncomeView({ suppliers, products, documents, locations, onAddSupplier, onSaveDocument, onCreateMissingProduct, onSaveLocations, externalSelectedDocumentId, onClearExternalDocument }: IncomeViewProps) {
+export default function IncomeView({ suppliers, products, documents, locations, onAddSupplier, onSaveDocument, onCreateMissingProduct, onSaveLocations, externalSelectedDocumentId, onClearExternalDocument, onUpdateSupplierConfig }: IncomeViewProps) {
   const [activeTab, setActiveTab] = useState<TabType>('new');
   const [step, setStep] = useState<Step>('upload');
   const [selectedSupplier, setSelectedSupplier] = useState('');
@@ -130,6 +131,21 @@ export default function IncomeView({ suppliers, products, documents, locations, 
     F: 'colLocation',
     G: 'colCrossType'
   });
+
+  const handleSupplierSelect = (supplierId: string) => {
+    setSelectedSupplier(supplierId);
+    setError(null);
+    const supplier = suppliers.find(s => s.id === supplierId);
+    if (supplier && supplier.importConfig) {
+      try {
+        const config = JSON.parse(supplier.importConfig);
+        if (config.startRow) setStartRow(config.startRow);
+        if (config.mapping) setMapping(config.mapping);
+      } catch (e) {
+        console.error('Failed to parse import config', e);
+      }
+    }
+  };
 
   const handleDownloadSample = () => {
     const data = [
