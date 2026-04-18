@@ -223,14 +223,9 @@ export default function StockView({ products, onOpenProduct }: StockViewProps) {
                         </button>
                       ) : (
                         <button 
-                          onClick={() => {
-                            if (p.parentId) {
-                              const rootProduct = products.find(rp => rp.id === p.parentId);
-                              if (rootProduct) onOpenProduct(rootProduct);
-                            }
-                          }}
+                          onClick={() => onOpenProduct(p)}
                           className="font-bold text-amber-600 hover:text-amber-800 underline decoration-dotted underline-offset-4 truncate"
-                          title="Открыть карточку корневого товара"
+                          title="Открыть карточку кросс-товара"
                         >
                           {p.article}
                         </button>

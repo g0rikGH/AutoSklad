@@ -347,6 +347,12 @@ export default function IncomeView({ suppliers, products, documents, locations, 
       }
     }
 
+    // Save config for the selected supplier
+    if (onUpdateSupplierConfig) {
+      const configObj = { startRow, mapping };
+      onUpdateSupplierConfig(selectedSupplier, JSON.stringify(configObj));
+    }
+
     const result = await onSaveDocument(newDoc);
     if (!result.success) {
       if (result.error?.includes(', ')) {
@@ -596,20 +602,17 @@ export default function IncomeView({ suppliers, products, documents, locations, 
 
           <div className="flex items-center gap-4 mb-6">
             <label className="text-sm font-medium text-slate-700 whitespace-nowrap">Поставщик:</label>
-            <div className="flex gap-2 max-w-md w-full relative">
-              <select
-                value={selectedSupplier}
-                onChange={(e) => {
-                  setSelectedSupplier(e.target.value);
-                  if (error) setError(null);
-                }}
-                className="flex-1 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="" disabled>Выберите поставщика...</option>
-                {suppliers.map(s => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
+              <div className="flex gap-2 max-w-md w-full relative">
+                <select
+                  value={selectedSupplier}
+                  onChange={(e) => handleSupplierSelect(e.target.value)}
+                  className="flex-1 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="" disabled>Выберите поставщика...</option>
+                  {suppliers.map(s => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
               <button 
                 onClick={() => setIsAddSupplierOpen(true)}
                 className="px-3 py-2 border border-slate-300 rounded-lg text-slate-600 hover:bg-slate-50 transition-colors"

@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { Partner, Document, ProductView } from '../types';
-import { FolderOpen, Plus, FileSpreadsheet, Columns, RotateCcw, CheckCheck, Eye, TableProperties, History, X, Trash2 } from 'lucide-react';
+import { FolderOpen, Plus, FileSpreadsheet, Columns, RotateCcw, CheckCheck, Eye, TableProperties, History, X, Trash2, Download } from 'lucide-react';
 
 interface ExpenseViewProps {
   clients: Partner[];
@@ -9,7 +9,7 @@ interface ExpenseViewProps {
   documents: Document[];
   onAddClient: (name: string) => Promise<Partner | undefined>;
   onSaveDocument: (doc: Document) => Promise<{ success: boolean; error?: string }>;
-  onRollbackDocument: (id: string) => void;
+  onRollbackDocument: (id: string) => Promise<void>;
   onUpdateClientConfig?: (id: string, config: string) => Promise<void>;
 }
 
@@ -24,6 +24,9 @@ interface ReconcileItem {
   stockQty: number;
   price: number;
   shipQty: number;
+  filePrice?: number;
+  stockPrice?: number;
+  parentSku?: string;
 }
 
 export default function ExpenseView({ clients, products, documents, onAddClient, onSaveDocument, onRollbackDocument, onUpdateClientConfig }: ExpenseViewProps) {
@@ -82,11 +85,90 @@ export default function ExpenseView({ clients, products, documents, onAddClient,
     .filter(d => historyFilterClient === 'all' || d.partnerId === historyFilterClient)
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-  const handleRollback = (docId: string) => {
-    if (window.confirm('Вы уверены, что хотите отменить эту реализацию? Товары вернутся на склад, а документ будет удален.')) {
-      onRollbackDocument(docId);
-      setViewingDoc(null);
+  const [isRollbackConfirmOpen, setIsRollbackConfirmOpen] = useState(false);
+  const [isRollingBack, setIsRollingBack] = useState(false);
+
+  const handleRollback = async (docId: string) => {
+    if (!docId) {
+      alert('Ошибка: ID документа не найден');
+      return;
     }
+    
+    setIsRollingBack(true);
+    try {
+      console.log('Initiating rollback via prop for:', docId);
+      await onRollbackDocument(docId);
+      setViewingDoc(null);
+      setIsRollbackConfirmOpen(false);
+    } catch (err: any) {
+      console.error('Rollback failed in component', err);
+    } finally {
+      setIsRollingBack(false);
+    }
+  };
+
+  const handleExportToExcel = (doc: Document) => {
+    const client = clients.find(c => c.id === doc.partnerId);
+    
+    // Header data
+    const hasCrosses = doc.rows.some(row => products.find(p => p.id === row.productId)?.type === 'phantom');
+    
+    const tableHeader = ['Артикул', 'Название', 'Количество', 'Цена (₽)', 'Сумма (₽)'];
+    if (hasCrosses) {
+      tableHeader.push('Кросс');
+    }
+
+    const headerRows = [
+      ['РЕКВИЗИТЫ КОМПАНИИ: ООО "МОЯ КОМПАНИЯ", ИНН 1234567890, г. Москва'],
+      [''],
+      [`Реализация № ${doc.number || doc.id}`],
+      [`Дата: ${new Date(doc.date).toLocaleString('ru-RU')}`],
+      [`Покупатель: ${client?.name || 'Неизвестно'}`],
+      [''],
+      tableHeader
+    ];
+
+    // Table data
+    const tableRows = doc.rows.map(row => {
+      const product = products.find(p => p.id === row.productId);
+      const rowData = [
+        product?.article || 'Неизвестно',
+        product?.name || 'Товар удален',
+        row.qty,
+        row.price,
+        row.qty * row.price
+      ];
+      
+      if (hasCrosses) {
+        let parentSku = '';
+        if (product?.type === 'phantom' && product.parentId) {
+          const parent = products.find(p => p.id === product.parentId);
+          parentSku = parent?.article || '';
+        }
+        rowData.push(parentSku);
+      }
+      
+      return rowData;
+    });
+
+    // Total row
+    const totalRow = ['', '', '', 'ИТОГО:', doc.totalAmount];
+    if (hasCrosses) totalRow.push('');
+
+    const fullData = [...headerRows, ...tableRows, totalRow];
+    
+    const ws = XLSX.utils.aoa_to_sheet(fullData);
+    
+    // Basic styling/widths could be added here if needed for more complex needs
+    // ws['!cols'] = [{ wch: 15 }, { wch: 40 }, { wch: 10 }, { wch: 10 }, { wch: 12 }];
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Реализация");
+    
+    const fileNameDate = new Date(doc.date).toISOString().split('T')[0];
+    const safeClientName = (client?.name || 'Неизвестно').replace(/[/\\?%*:|"<>]/g, '-');
+    const fileName = `${safeClientName}_${doc.number || doc.id}_${fileNameDate}.xlsx`;
+    XLSX.writeFile(wb, fileName);
   };
 
   const handleProceedToMapping = () => {
@@ -106,6 +188,7 @@ export default function ExpenseView({ clients, products, documents, onAddClient,
 
     const artIdx = getColumnIndex('colArticle');
     const reqQtyIdx = getColumnIndex('colQty');
+    const priceIdx = getColumnIndex('colPrice');
 
     if (artIdx === -1 || reqQtyIdx === -1) {
       alert('Необходимо выбрать колонки для Артикула и Количества!');
@@ -123,10 +206,28 @@ export default function ExpenseView({ clients, products, documents, onAddClient,
       const reqQtyVal = String(row[reqQtyIdx] || '0').replace(/\s+/g, '').replace(/[^\d.-]/g, '');
       const reqQty = parseInt(reqQtyVal) || 0;
 
+      let filePrice = 0;
+      if (priceIdx !== -1) {
+        const pVal = String(row[priceIdx] || '0').replace(/\s+/g, '').replace(/[^\d.-]/g, '');
+        filePrice = parseFloat(pVal) || 0;
+      }
+
       if (!article) continue;
 
       const product = products.find(p => p.article === article);
       if (product) {
+        // Если цена в файле больше чем в цена остатка, берем цену из файла списания. 
+        // Если меньше- выдаем предупреждение (но всё равно берем из файла или стоковую?)
+        // Исходя из "списание производим исходя из цены файла списание", берем цену файла.
+        const stockPrice = product.sellingPrice;
+        const usedPrice = filePrice > 0 ? filePrice : stockPrice;
+
+        let parentSku = undefined;
+        if (product.type === 'phantom' && product.parentId) {
+          const parent = products.find(p => p.id === product.parentId);
+          parentSku = parent?.article;
+        }
+
         reconcileItems.push({
           productId: product.id,
           sku: product.article,
@@ -134,8 +235,11 @@ export default function ExpenseView({ clients, products, documents, onAddClient,
           name: product.name,
           reqQty: reqQty,
           stockQty: product.qty,
-          price: product.sellingPrice,
-          shipQty: Math.min(reqQty, product.qty)
+          price: usedPrice,
+          filePrice: filePrice > 0 ? filePrice : undefined,
+          stockPrice: stockPrice,
+          shipQty: Math.min(reqQty, product.qty),
+          parentSku
         });
       } else {
         reconcileItems.push({
@@ -447,6 +551,7 @@ export default function ExpenseView({ clients, products, documents, onAddClient,
                   <th className="py-3 px-4 font-semibold border-r border-slate-700">Запрошено</th>
                   <th className="py-3 px-4 font-semibold border-r border-slate-700">На складе</th>
                   <th className="py-3 px-4 font-semibold bg-blue-600 border-r border-blue-700 w-32">К отгрузке</th>
+                  <th className="py-3 px-4 font-semibold border-r border-slate-700">Замена</th>
                   <th className="py-3 px-4 font-semibold border-r border-slate-700">Цена (₽)</th>
                   <th className="py-3 px-4 font-semibold">Сумма (₽)</th>
                 </tr>
@@ -456,9 +561,13 @@ export default function ExpenseView({ clients, products, documents, onAddClient,
                   const isOutOfStock = item.stockQty === 0;
                   const isPartial = !isOutOfStock && item.shipQty < item.reqQty;
                   
+                  // Warning if file price is lower than stock price
+                  const isLowPrice = item.filePrice !== undefined && item.stockPrice !== undefined && item.filePrice < item.stockPrice;
+
                   let rowClass = "bg-white hover:bg-slate-50";
                   if (isOutOfStock) rowClass = "bg-rose-50 hover:bg-rose-100";
                   else if (isPartial) rowClass = "bg-amber-50 hover:bg-amber-100";
+                  else if (isLowPrice) rowClass = "bg-yellow-50 hover:bg-yellow-100";
 
                   return (
                     <tr key={idx} className={`${rowClass} transition-colors`}>
@@ -475,7 +584,25 @@ export default function ExpenseView({ clients, products, documents, onAddClient,
                           className="w-full px-2 py-1.5 text-center font-bold bg-white border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                         />
                       </td>
-                      <td className="py-3 px-4 border-r border-slate-200">{item.price}</td>
+                      <td className="py-3 px-4 border-r border-slate-200">
+                        {item.parentSku ? (
+                          <span className="inline-flex items-center gap-1 font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                             {item.parentSku}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">-</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 border-r border-slate-200">
+                        <div className="flex flex-col items-center">
+                          <span className={isLowPrice ? 'text-rose-600 font-bold' : ''}>{item.price}</span>
+                          {isLowPrice && (
+                            <span className="text-[10px] text-rose-500 font-medium whitespace-nowrap" title={`Цена в базе: ${item.stockPrice}`}>
+                              В файле ниже базы!
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td className="py-3 px-4 font-bold text-slate-800">{item.shipQty * item.price}</td>
                     </tr>
                   );
@@ -483,7 +610,7 @@ export default function ExpenseView({ clients, products, documents, onAddClient,
               </tbody>
               <tfoot className="bg-slate-50 border-t-2 border-slate-200">
                 <tr>
-                  <td colSpan={7} className="py-4 px-4 text-right font-bold text-lg text-slate-700">
+                  <td colSpan={8} className="py-4 px-4 text-right font-bold text-lg text-slate-700">
                     Итого к оплате:
                   </td>
                   <td className="py-4 px-4 font-bold text-lg text-emerald-600">
@@ -588,7 +715,7 @@ export default function ExpenseView({ clients, products, documents, onAddClient,
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
             <div className="flex items-center justify-between p-6 border-b border-slate-100">
               <div>
-                <h2 className="text-xl font-bold text-slate-800">Реализация {viewingDoc.id}</h2>
+                <h2 className="text-xl font-bold text-slate-800">Реализация {viewingDoc.number ? `№ ${viewingDoc.number}` : viewingDoc.id}</h2>
                 <p className="text-sm text-slate-500 mt-1">
                   от {new Date(viewingDoc.date).toLocaleString('ru-RU')} • Покупатель: {clients.find(c => c.id === viewingDoc.partnerId)?.name || 'Неизвестно'}
                 </p>
@@ -607,6 +734,7 @@ export default function ExpenseView({ clients, products, documents, onAddClient,
                   <tr>
                     <th className="py-3 px-4 font-semibold border-b border-slate-200">Артикул</th>
                     <th className="py-3 px-4 font-semibold border-b border-slate-200">Название</th>
+                    <th className="py-3 px-4 font-semibold border-b border-slate-200">Замена</th>
                     <th className="py-3 px-4 font-semibold border-b border-slate-200 text-center">Кол-во</th>
                     <th className="py-3 px-4 font-semibold border-b border-slate-200 text-right">Цена</th>
                     <th className="py-3 px-4 font-semibold border-b border-slate-200 text-right">Сумма</th>
@@ -619,6 +747,15 @@ export default function ExpenseView({ clients, products, documents, onAddClient,
                       <tr key={idx} className="hover:bg-slate-50">
                         <td className="py-2 px-4 font-medium">{product?.article || 'Неизвестно'}</td>
                         <td className="py-2 px-4">{product?.name || 'Товар удален'}</td>
+                        <td className="py-2 px-4">
+                          {product?.type === 'phantom' && product.parentId ? (
+                            <span className="text-xs font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                               {products.find(p => p.id === product.parentId)?.article || '-'}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">-</span>
+                          )}
+                        </td>
                         <td className="py-2 px-4 text-center">{row.qty}</td>
                         <td className="py-2 px-4 text-right">{row.price} ₽</td>
                         <td className="py-2 px-4 text-right font-medium">{row.qty * row.price} ₽</td>
@@ -636,14 +773,47 @@ export default function ExpenseView({ clients, products, documents, onAddClient,
             </div>
 
             <div className="p-6 border-t border-slate-100 flex justify-between items-center bg-slate-50 rounded-b-2xl">
+              <div className="flex gap-3">
+                {!isRollbackConfirmOpen ? (
+                  <button
+                    onClick={() => setIsRollbackConfirmOpen(true)}
+                    className="flex items-center gap-2 px-4 py-2 bg-rose-100 text-rose-700 hover:bg-rose-200 rounded-lg text-sm font-medium transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Откат реализации (вернуть на склад)
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-3 animate-in zoom-in-95 duration-200">
+                    <span className="text-sm font-bold text-rose-600">Вы уверены?</span>
+                    <button
+                      disabled={isRollingBack}
+                      onClick={() => handleRollback(viewingDoc.id)}
+                      className="px-4 py-2 bg-rose-600 text-white hover:bg-rose-700 rounded-lg text-sm font-medium disabled:opacity-50 transition-colors"
+                    >
+                      {isRollingBack ? 'Отмена...' : 'Да, подтверждаю'}
+                    </button>
+                    <button
+                      disabled={isRollingBack}
+                      onClick={() => setIsRollbackConfirmOpen(false)}
+                      className="px-4 py-2 bg-slate-200 text-slate-700 hover:bg-slate-300 rounded-lg text-sm font-medium transition-colors"
+                    >
+                      Нет
+                    </button>
+                  </div>
+                )}
+
+                {!isRollbackConfirmOpen && (
+                  <button
+                    onClick={() => handleExportToExcel(viewingDoc)}
+                    className="flex items-center gap-2 px-4 py-2 bg-emerald-100 text-emerald-700 hover:bg-emerald-200 rounded-lg text-sm font-medium transition-colors"
+                  >
+                    <Download className="w-4 h-4" />
+                    Скачать Excel
+                  </button>
+                )}
+              </div>
               <button
-                onClick={() => handleRollback(viewingDoc.id)}
-                className="flex items-center gap-2 px-4 py-2 bg-rose-100 text-rose-700 hover:bg-rose-200 rounded-lg text-sm font-medium transition-colors"
-              >
-                <Trash2 className="w-4 h-4" />
-                Откат реализации (вернуть на склад)
-              </button>
-              <button
+                disabled={isRollingBack}
                 onClick={() => setViewingDoc(null)}
                 className="px-6 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-sm font-medium transition-colors"
               >

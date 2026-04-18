@@ -10,7 +10,7 @@ interface ProductModalProps {
   locations: Location[];
   onClose: () => void;
   onSave: (updatedProduct: ProductView) => void;
-  onAddPhantom: (parentId: string, sku: string, price: number, brand: string) => void;
+  onAddPhantom: (parentId: string, sku: string, price: number, brand: string, comment: string) => void;
   onRemovePhantom: (phantomId: string) => void;
   onUpdatePhantomInfo: (phantomId: string, updates: any) => Promise<void>;
   onOpenDocument?: (docId: string) => void;
@@ -21,6 +21,8 @@ export default function ProductModal({ product, allProducts, brands, locations, 
   const [newPhantomSku, setNewPhantomSku] = useState('');
   const [newPhantomPrice, setNewPhantomPrice] = useState('');
   const [newPhantomBrand, setNewPhantomBrand] = useState('');
+  const [newPhantomComment, setNewPhantomComment] = useState('');
+  const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<ProductHistoryRecord[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
@@ -45,27 +47,29 @@ export default function ProductModal({ product, allProducts, brands, locations, 
   if (!editedProduct) return null;
 
   const handleAddPhantomClick = () => {
+    setError(null);
     const sku = newPhantomSku.trim();
     if (!sku) return;
 
     if (/[А-Яа-яЁё]/.test(sku)) {
-      alert('Ошибка: Артикул кросса может содержать только латинские буквы и символы. Кириллица запрещена.');
+      setError('Обнаружены запрещенные символы (кириллица)');
       return;
     }
     
     const parsedPrice = newPhantomPrice ? Number(newPhantomPrice) : 0;
     if (newPhantomPrice && (isNaN(parsedPrice) || parsedPrice < 0)) {
-      alert('Ошибка: Цена продажи должна быть положительным числом.');
+      setError('Ошибка: Цена продажи должна быть положительным числом.');
       return;
     }
 
     const parentId = editedProduct.type === 'real' ? editedProduct.id : editedProduct.parentId;
     
     if (parentId) {
-      onAddPhantom(parentId, sku, parsedPrice, newPhantomBrand.trim());
+      onAddPhantom(parentId, sku, parsedPrice, newPhantomBrand.trim(), newPhantomComment.trim());
       setNewPhantomSku('');
       setNewPhantomPrice('');
       setNewPhantomBrand('');
+      setNewPhantomComment('');
     }
   };
 
@@ -247,7 +251,18 @@ export default function ProductModal({ product, allProducts, brands, locations, 
                           }
                         }}
                         placeholder="Бренд"
-                        className="text-xs text-slate-600 bg-slate-50 border border-slate-200 px-2 py-1 rounded w-full max-w-[120px] focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        className="text-xs text-slate-600 bg-slate-50 border border-slate-200 px-2 py-1 rounded w-full max-w-[100px] focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      />
+                      <input
+                        type="text"
+                        defaultValue={phantom.comment || ''}
+                        onBlur={(e) => {
+                          if (e.target.value !== (phantom.comment || '')) {
+                            onUpdatePhantomInfo(phantom.id, { comment: e.target.value });
+                          }
+                        }}
+                        placeholder="Комент"
+                        className="text-xs text-slate-500 bg-slate-50 border border-slate-200 px-2 py-1 rounded w-full flex-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
                       />
                     </div>
                     <div className="flex items-center gap-2">
@@ -282,11 +297,21 @@ export default function ProductModal({ product, allProducts, brands, locations, 
               <label className="block text-sm font-semibold text-slate-700 mb-2">
                 Добавить новый кросс:
               </label>
+
+              {error && (
+                <div className="mb-3 px-3 py-2 bg-rose-50 text-rose-600 border border-rose-200 rounded-lg text-xs font-medium animate-in slide-in-from-top-1 duration-200">
+                  {error}
+                </div>
+              )}
+
               <div className="flex flex-col sm:flex-row gap-2">
                 <input
                   type="text"
                   value={newPhantomSku}
-                  onChange={(e) => setNewPhantomSku(e.target.value)}
+                  onChange={(e) => {
+                    setNewPhantomSku(e.target.value);
+                    if (error) setError(null);
+                  }}
                   placeholder="Артикул"
                   className="flex-1 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
@@ -303,6 +328,13 @@ export default function ProductModal({ product, allProducts, brands, locations, 
                   onChange={(e) => setNewPhantomPrice(e.target.value)}
                   placeholder="Цена продажи"
                   className="w-full sm:w-32 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <input
+                  type="text"
+                  value={newPhantomComment}
+                  onChange={(e) => setNewPhantomComment(e.target.value)}
+                  placeholder="Коммент"
+                  className="flex-1 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 <button 
                   onClick={handleAddPhantomClick}

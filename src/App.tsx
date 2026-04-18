@@ -201,8 +201,10 @@ function Dashboard() {
       await api.post('/documents', payload);
       
       // Обновляем состояние каталога (остатки и цены) и историю документов
-      fetchCatalog();
-      fetchReferences(); 
+      await Promise.all([
+        fetchCatalog(),
+        fetchReferences()
+      ]);
       return { success: true };
     } catch (error: any) {
       // Отлавливаем ошибку, включая тупиковые CHECK (недостаток товара)
@@ -216,20 +218,28 @@ function Dashboard() {
   };
 
   const handleRollbackDocument = async (documentId: string) => {
-    if (!window.confirm('Вы уверены, что хотите отменить этот документ? Это удалит связанные движения по складу.')) {
-      return;
-    }
+    console.log('App: handleRollbackDocument started for:', documentId);
     try {
-      await api.post(`/documents/${documentId}/rollback`);
-      await fetchReferences();
-      await fetchCatalog();
-    } catch (err) {
-      console.error('Failed to rollback document', err);
-      alert('Не удалось отменить документ');
+      const res = await api.post(`/documents/${documentId}/rollback`);
+      console.log('App: Rollback API response:', res.data);
+      if (res.data.success) {
+        await Promise.all([
+          fetchReferences(),
+          fetchCatalog()
+        ]);
+        alert('Документ успешно отменен. Остатки возвращены.');
+      } else {
+        alert('Ошибка сервера при отмене: ' + (res.data.message || 'неизвестно'));
+      }
+    } catch (err: any) {
+      console.error('App: Failed to rollback document', err);
+      const msg = err.response?.data?.message || err.message;
+      alert('Не удалось отменить документ: ' + msg);
+      throw err;
     }
   };
 
-  const handleAddPhantom = async (parentId: string, sku: string, price: number, brandName: string) => {
+  const handleAddPhantom = async (parentId: string, sku: string, price: number, brandName: string, comment: string) => {
     try {
       const parentProduct = productsView.find(c => c.id === parentId);
       if (!parentProduct) return;
@@ -251,7 +261,8 @@ function Dashboard() {
         name: `${parentProduct.name} (кросс)`,
         brandId: finalBrandId,
         type: 'PHANTOM',
-        parentId: parentId
+        parentId: parentId,
+        comment: comment || undefined
       };
 
       const productRes = await api.post('/catalog', payload);
@@ -282,6 +293,8 @@ function Dashboard() {
 
   const handleUpdatePhantomInfo = async (phantomId: string, updates: any) => {
     try {
+      const apiUpdates: any = {};
+
       if (updates.brandName !== undefined) {
         let finalBrandId = null;
         if (updates.brandName) {
@@ -294,11 +307,19 @@ function Dashboard() {
              setBrands(prev => [...prev, brandRes.data.data]);
            }
         }
-        await api.put(`/catalog/${phantomId}`, { brandId: finalBrandId });
+        apiUpdates.brandId = finalBrandId;
       }
       
       if (updates.sellingPrice !== undefined) {
-         await api.put(`/catalog/${phantomId}`, { sellingPrice: updates.sellingPrice });
+         apiUpdates.sellingPrice = updates.sellingPrice;
+      }
+
+      if (updates.comment !== undefined) {
+        apiUpdates.comment = updates.comment;
+      }
+      
+      if (Object.keys(apiUpdates).length > 0) {
+        await api.put(`/catalog/${phantomId}`, apiUpdates);
       }
       
       await fetchCatalog();
@@ -360,6 +381,7 @@ function Dashboard() {
               }}
               externalSelectedDocumentId={externalDocIdToOpen}
               onClearExternalDocument={() => setExternalDocIdToOpen(null)}
+              onUpdateSupplierConfig={handleUpdatePartnerConfig}
             />
           )}
           

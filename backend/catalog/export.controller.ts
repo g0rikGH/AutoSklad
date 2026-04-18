@@ -1,6 +1,6 @@
 import { Controller, Get, Res, Inject } from '@nestjs/common';
 import { CatalogService } from './catalog.service';
-import { Response } from 'express';
+import type { Response } from 'express';
 import * as XLSX from 'xlsx';
 
 @Controller('export')

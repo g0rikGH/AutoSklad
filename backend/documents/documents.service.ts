@@ -117,47 +117,64 @@ export class DocumentsService {
   }
 
   async rollbackDocument(id: string) {
-    return this.prisma.$transaction(async (tx) => {
-      const doc = await tx.document.findUnique({
-        where: { id },
-        include: { rows: true }
-      });
+    console.log(`[BACKEND-ROLLBACK] Starting rollback for document: ${id}`);
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const doc = await tx.document.findUnique({
+          where: { id },
+          include: { rows: true }
+        });
 
-      if (!doc) throw new BadRequestException('Документ не найден');
-
-      const productIds = doc.rows.map(r => r.productId);
-      const productsInfo = await tx.catalog.findMany({
-        where: { id: { in: productIds } },
-        select: { id: true, type: true, parentId: true }
-      });
-      const productMap = new Map(productsInfo.map(p => [p.id, p]));
-
-      for (const row of doc.rows) {
-        let physicalId = row.productId;
-        const pInfo = productMap.get(row.productId);
-        if (pInfo && pInfo.type === 'PHANTOM' && pInfo.parentId) {
-          physicalId = pInfo.parentId;
+        if (!doc) {
+          console.error(`[BACKEND-ROLLBACK] Document not found: ${id}`);
+          throw new BadRequestException('Документ не найден');
         }
 
-        if (doc.type === 'INCOME') {
-          const stock = await tx.stockBalance.findUnique({ where: { productId: physicalId } });
-          if (!stock || stock.qty < row.qty) {
-            throw new BadRequestException('Невозможно отменить приход: товар уже списан!');
+        console.log(`[BACKEND-ROLLBACK] Processing ${doc.rows.length} rows for document type: ${doc.type}`);
+
+        const productIds = doc.rows.map(r => r.productId);
+        const productsInfo = await tx.catalog.findMany({
+          where: { id: { in: productIds } },
+          select: { id: true, type: true, parentId: true }
+        });
+        const productMap = new Map(productsInfo.map(p => [p.id, p]));
+
+        for (const row of doc.rows) {
+          let physicalId = row.productId;
+          const pInfo = productMap.get(row.productId);
+          if (pInfo && pInfo.type === 'PHANTOM' && pInfo.parentId) {
+            physicalId = pInfo.parentId;
           }
-          await tx.stockBalance.update({
-            where: { productId: physicalId },
-            data: { qty: { decrement: row.qty } }
-          });
-        } else if (doc.type === 'EXPENSE') {
-          await tx.stockBalance.update({
-            where: { productId: physicalId },
-            data: { qty: { increment: row.qty } }
-          });
-        }
-      }
 
-      return tx.document.delete({ where: { id } });
-    });
+          console.log(`[BACKEND-ROLLBACK] Adjusting product ${physicalId}, qty ${row.qty}, op: ${doc.type === 'INCOME' ? 'DEC' : 'INC'}`);
+
+          if (doc.type === 'INCOME') {
+            const stock = await tx.stockBalance.findUnique({ where: { productId: physicalId } });
+            if (!stock || stock.qty < row.qty) {
+              throw new BadRequestException('Невозможно отменить приход: товар уже списан!');
+            }
+            await tx.stockBalance.update({
+              where: { productId: physicalId },
+              data: { qty: { decrement: row.qty } }
+            });
+          } else if (doc.type === 'EXPENSE') {
+            await tx.stockBalance.update({
+              where: { productId: physicalId },
+              data: { qty: { increment: row.qty } }
+            });
+          }
+        }
+
+        console.log(`[BACKEND-ROLLBACK] Deleting document ${id}`);
+        await tx.documentRow.deleteMany({ where: { documentId: id } });
+        await tx.document.delete({ where: { id } });
+        console.log(`[BACKEND-ROLLBACK] Rollback COMPLETED for: ${id}`);
+        return { success: true };
+      });
+    } catch (error: any) {
+      console.error(`[BACKEND-ROLLBACK] CRITICAL ERROR for ${id}:`, error);
+      throw error;
+    }
   }
 
   async getAllDocuments() {
