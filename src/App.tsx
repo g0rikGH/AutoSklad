@@ -72,61 +72,106 @@ function Dashboard() {
     fetchReferences();
   }, []);
 
-  const handleSaveProduct = (updatedProductView: ProductView) => {
-    // Handle brand creation if it's a temporary ID
-    let finalBrandId = updatedProductView.brandId;
-    if (finalBrandId.startsWith('temp_b_')) {
-      finalBrandId = `b${Date.now()}`;
-      setBrands(prev => [...prev, { id: finalBrandId, name: updatedProductView.brand }]);
-    }
-
-    // Handle location creation if it's a temporary ID
-    let finalLocationId = updatedProductView.locationId;
-    if (finalLocationId && finalLocationId.startsWith('temp_l_')) {
-      finalLocationId = `loc${Date.now()}`;
-      setLocations(prev => [...prev, { id: finalLocationId!, name: updatedProductView.location! }]);
-    }
-
-    // Update Catalog
-    setCatalog(prev => prev.map(c => c.id === updatedProductView.id ? {
-      id: updatedProductView.id,
-      article: updatedProductView.article,
-      brandId: finalBrandId,
-      name: updatedProductView.name,
-      locationId: finalLocationId,
-      comment: updatedProductView.comment,
-      type: updatedProductView.type,
-      parentId: updatedProductView.parentId,
-    } : c));
-
-    // Update Prices
-    setPrices(prev => {
-      const existing = prev.find(p => p.productId === updatedProductView.id);
-      if (existing) {
-        return prev.map(p => p.productId === updatedProductView.id ? {
-          ...p,
-          purchasePrice: updatedProductView.purchasePrice,
-          sellingPrice: updatedProductView.sellingPrice,
-        } : p);
-      } else {
-        return [...prev, {
-          productId: updatedProductView.id,
-          purchasePrice: updatedProductView.purchasePrice,
-          sellingPrice: updatedProductView.sellingPrice,
-        }];
+  const handleSaveProduct = async (updatedProductView: ProductView) => {
+    try {
+      // Handle brand creation if it's a temporary ID
+      let finalBrandId = updatedProductView.brandId;
+      if (finalBrandId.startsWith('temp_b_')) {
+        const brandRes = await api.post('/catalog/brands', { name: updatedProductView.brand });
+        finalBrandId = brandRes.data.data.id;
       }
-    });
 
-    setSelectedProduct(null);
+      // Handle location creation if it's a temporary ID
+      let finalLocationId = updatedProductView.locationId;
+      if (finalLocationId && finalLocationId.startsWith('temp_l_')) {
+        const locRes = await api.post('/catalog/locations', { name: updatedProductView.location });
+        finalLocationId = locRes.data.data.id;
+      }
+
+      // Update Catalog API calls
+      await api.put(`/catalog/${updatedProductView.id}`, {
+        article: updatedProductView.article,
+        name: updatedProductView.name,
+        brandId: finalBrandId,
+        locationId: finalLocationId,
+        comment: updatedProductView.comment,
+        purchasePrice: updatedProductView.purchasePrice,
+        sellingPrice: updatedProductView.sellingPrice,
+      });
+
+      // Refetch catalog to show updated data
+      await fetchCatalog();
+      setSelectedProduct(null);
+    } catch (err) {
+      console.error('Failed to update product', err);
+      alert('Ошибка при сохранении карточки товара');
+    }
   };
 
-  const handleAddPartner = (name: string, type: 'supplier' | 'client') => {
-    const newPartner: Partner = { id: `p${Date.now()}`, name, type };
-    setPartners([...partners, newPartner]);
+  const handleAddPartner = async (name: string, type: 'supplier' | 'client') => {
+    try {
+      const res = await api.post('/partners', { 
+        name, 
+        type: type === 'supplier' ? 'SUPPLIER' : 'CLIENT' 
+      });
+      if (res.data.success) {
+        setPartners(prev => [...prev, res.data.data]);
+        return res.data.data;
+      }
+    } catch (error) {
+      console.error('Ошибка добавления контрагента:', error);
+      alert('Не удалось добавить контрагента');
+    }
+  };
+
+  const handleCreateMissingProduct = async (data: { article: string; brandName: string; productName: string; parentId?: string }) => {
+    const { article, brandName, productName, parentId } = data;
+    try {
+      if (/[А-Яа-яЁё]/.test(article)) {
+        console.error('Ошибка: артикул содержит кириллицу', article);
+        return null;
+      }
+
+      let brandId = '';
+      const existingBrand = brands.find(b => b.name.toLowerCase() === (brandName || 'Без бренда').toLowerCase());
+      if (existingBrand) {
+        brandId = existingBrand.id;
+      } else {
+        const brandRes = await api.post('/catalog/brands', { name: brandName || 'Без бренда' });
+        brandId = brandRes.data.data.id;
+        setBrands(prev => [...prev, brandRes.data.data]);
+      }
+
+      const payload = {
+        article,
+        name: productName || 'Новый товар',
+        brandId,
+        type: parentId ? 'PHANTOM' : 'REAL',
+        parentId: parentId || undefined
+      };
+      
+      const productRes = await api.post('/catalog', payload);
+      const newProduct = productRes.data.data;
+      const productViewObject = { 
+        ...newProduct, 
+        type: newProduct.type.toLowerCase(),
+        brand: brandName || 'Без бренда',
+        location: 'Не на полке',
+        qty: 0, 
+        purchasePrice: 0, 
+        sellingPrice: 0 
+      };
+      
+      setProductsView(prev => [...prev, productViewObject]);
+      return productViewObject;
+    } catch (e) {
+      console.error('Ошибка при создании нового товара', e);
+      return null;
+    }
   };
 
   // Шаг 2: Проведение Накладной (POST)
-  const handleSaveDocument = async (doc: Document) => {
+  const handleSaveDocument = async (doc: Document): Promise<{ success: boolean; error?: string }> => {
     try {
       // Формируем payload на основе нашего DTO (CreateDocumentDto)
       const payload = {
@@ -143,82 +188,111 @@ function Dashboard() {
       // Отправляем запрос
       await api.post('/documents', payload);
       
-      // Если запрос прошел успешно
-      alert(`Документ успешно проведен!`);
-      
       // Обновляем состояние каталога (остатки и цены) и историю документов
       fetchCatalog();
       fetchReferences(); 
-
+      return { success: true };
     } catch (error: any) {
       // Отлавливаем ошибку, включая тупиковые CHECK (недостаток товара)
-      const errorMessage = error.response?.data?.message || 'Неизвестная ошибка при проведении документа';
-      alert(`Ошибка: ${errorMessage}`);
+      let errorMessage = error.response?.data?.message || error.message || 'Неизвестная ошибка при проведении документа';
+      if (Array.isArray(errorMessage)) {
+        errorMessage = errorMessage.join(', '); // For class-validator DTO arrays
+      }
       console.error('Order creation error:', error);
+      return { success: false, error: errorMessage };
     }
   };
 
-  const handleRollbackDocument = (documentId: string) => {
-    const docToRollback = documents.find(d => d.id === documentId);
-    if (!docToRollback) return;
+  const handleRollbackDocument = async (documentId: string) => {
+    if (!window.confirm('Вы уверены, что хотите отменить этот документ? Это удалит связанные движения по складу.')) {
+      return;
+    }
+    try {
+      await api.post(`/documents/${documentId}/rollback`);
+      await fetchReferences();
+      await fetchCatalog();
+    } catch (err) {
+      console.error('Failed to rollback document', err);
+      alert('Не удалось отменить документ');
+    }
+  };
 
-    // Restore stock
-    setStock(prevStock => {
-      let newStock = [...prevStock];
-      
-      docToRollback.rows.forEach(row => {
-        const existingStockIndex = newStock.findIndex(s => s.productId === row.productId);
-        // Reverse the quantity change
-        const qtyChange = docToRollback.type === 'expense' ? row.qty : -row.qty;
-        
-        if (existingStockIndex >= 0) {
-          newStock[existingStockIndex] = {
-            ...newStock[existingStockIndex],
-            qty: newStock[existingStockIndex].qty + qtyChange
-          };
+  const handleAddPhantom = async (parentId: string, sku: string, price: number, brandName: string) => {
+    try {
+      const parentProduct = productsView.find(c => c.id === parentId);
+      if (!parentProduct) return;
+
+      let finalBrandId = parentProduct.brandId; // default to parent's brand
+      if (brandName) {
+        const existingBrand = brands.find(b => b.name.toLowerCase() === brandName.toLowerCase());
+        if (existingBrand) {
+          finalBrandId = existingBrand.id;
         } else {
-          newStock.push({
-            productId: row.productId,
-            qty: qtyChange
-          });
+          const brandRes = await api.post('/catalog/brands', { name: brandName });
+          finalBrandId = brandRes.data.data.id;
+          setBrands(prev => [...prev, brandRes.data.data]);
         }
-      });
+      }
+
+      const payload = {
+        article: sku,
+        name: `${parentProduct.name} (кросс)`,
+        brandId: finalBrandId,
+        type: 'PHANTOM',
+        parentId: parentId
+      };
+
+      const productRes = await api.post('/catalog', payload);
       
-      return newStock;
-    });
+      if (price > 0) {
+        await api.put(`/catalog/${productRes.data.data.id}`, {
+          sellingPrice: price
+        });
+      }
 
-    // Remove document
-    setDocuments(prevDocs => prevDocs.filter(d => d.id !== documentId));
+      await fetchCatalog();
+    } catch (err) {
+      console.error('Failed to create phantom product', err);
+    }
   };
 
-  const handleAddPhantom = (parentId: string, sku: string, price: number) => {
-    const newId = `p${Date.now()}`;
-    const parentProduct = catalog.find(c => c.id === parentId);
-    
-    if (!parentProduct) return;
-
-    const newPhantom: CatalogItem = {
-      id: newId,
-      article: sku,
-      brandId: parentProduct.brandId,
-      name: `${parentProduct.name} (кросс)`,
-      locationId: null, // Phantoms usually don't have a physical location
-      type: 'phantom',
-      parentId: parentId
-    };
-
-    setCatalog([...catalog, newPhantom]);
-    
-    setPrices([...prices, {
-      productId: newId,
-      purchasePrice: 0,
-      sellingPrice: price
-    }]);
+  const handleRemovePhantom = async (phantomId: string) => {
+    if (!window.confirm('Вы уверены, что хотите отвязать этот кросс-артикул?')) {
+      return;
+    }
+    try {
+      await api.delete(`/catalog/${phantomId}`);
+      await fetchCatalog();
+    } catch (err) {
+      console.error('Failed to delete phantom product', err);
+    }
   };
 
-  const handleRemovePhantom = (phantomId: string) => {
-    setCatalog(catalog.filter(c => c.id !== phantomId));
-    setPrices(prices.filter(p => p.productId !== phantomId));
+  const handleUpdatePhantomInfo = async (phantomId: string, updates: any) => {
+    try {
+      if (updates.brandName !== undefined) {
+        let finalBrandId = null;
+        if (updates.brandName) {
+           const existingBrand = brands.find(b => b.name.toLowerCase() === updates.brandName.toLowerCase());
+           if (existingBrand) {
+             finalBrandId = existingBrand.id;
+           } else {
+             const brandRes = await api.post('/catalog/brands', { name: updates.brandName });
+             finalBrandId = brandRes.data.data.id;
+             setBrands(prev => [...prev, brandRes.data.data]);
+           }
+        }
+        await api.put(`/catalog/${phantomId}`, { brandId: finalBrandId });
+      }
+      
+      if (updates.sellingPrice !== undefined) {
+         await api.put(`/catalog/${phantomId}`, { sellingPrice: updates.sellingPrice });
+      }
+      
+      await fetchCatalog();
+    } catch (err) {
+      console.error('Failed to update phantom info', err);
+    }
   };
 
   const suppliers = partners.filter(p => p.type === 'supplier');
@@ -241,8 +315,37 @@ function Dashboard() {
             <IncomeView 
               suppliers={suppliers} 
               products={productsView}
+              documents={documents}
+              locations={locations}
               onAddSupplier={(name) => handleAddPartner(name, 'supplier')} 
               onSaveDocument={handleSaveDocument}
+              onCreateMissingProduct={handleCreateMissingProduct}
+              onSaveLocations={async (updates: {productId: string, locationName: string}[]) => {
+                try {
+                  let currentLocations = [...locations];
+                  for (const { productId, locationName } of updates) {
+                    let finalLocationId = null;
+                    if (locationName && locationName.trim()) {
+                      const existingLoc = currentLocations.find(l => l.name.toLowerCase() === locationName.trim().toLowerCase());
+                      if (existingLoc) {
+                        finalLocationId = existingLoc.id;
+                      } else {
+                        const res = await api.post('/catalog/locations', { name: locationName.trim() });
+                        finalLocationId = res.data.data.id;
+                        currentLocations.push(res.data.data);
+                      }
+                    }
+                    await api.put(`/catalog/${productId}`, { locationId: finalLocationId });
+                  }
+                  
+                  // Only update state after full success
+                  setLocations(currentLocations);
+                  await fetchCatalog();
+                } catch (err) {
+                  console.error('Failed to update product locations', err);
+                  throw err; // throw back to let the child know it failed
+                }
+              }}
             />
           )}
           
@@ -257,7 +360,7 @@ function Dashboard() {
             />
           )}
           
-          {activeTab === 'reports' && <ReportsView documents={documents} products={productsView} partners={partners} />}
+          {activeTab === 'reports' && <ReportsView />}
           
           {activeTab === 'price' && <PriceView products={productsView} />}
         </div>
@@ -274,6 +377,7 @@ function Dashboard() {
           onSave={handleSaveProduct}
           onAddPhantom={handleAddPhantom}
           onRemovePhantom={handleRemovePhantom}
+          onUpdatePhantomInfo={handleUpdatePhantomInfo}
         />
       )}
     </div>

@@ -7,7 +7,7 @@ interface ExpenseViewProps {
   products: ProductView[];
   documents: Document[];
   onAddClient: (name: string) => void;
-  onSaveDocument: (doc: Document) => void;
+  onSaveDocument: (doc: Document) => Promise<{ success: boolean; error?: string }>;
   onRollbackDocument: (id: string) => void;
 }
 
@@ -122,7 +122,7 @@ export default function ExpenseView({ clients, products, documents, onAddClient,
     setItems(newItems);
   };
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     const documentRows = items
       .filter(item => item.shipQty > 0 && item.productId !== 'unknown')
       .map(item => ({
@@ -147,7 +147,11 @@ export default function ExpenseView({ clients, products, documents, onAddClient,
       totalAmount
     };
 
-    onSaveDocument(newDoc);
+    const result = await onSaveDocument(newDoc);
+    if (!result.success) {
+      alert(`Ошибка: ${result.error || 'Сбой операции'}`);
+      return;
+    }
 
     alert("Накладная проведена! Остатки списаны.");
     setStep('upload');

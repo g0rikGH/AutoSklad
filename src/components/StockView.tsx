@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { ProductView } from '../types';
-import { Search, RefreshCw, MapPin } from 'lucide-react';
+import { Search, RefreshCw, MapPin, CornerDownRight, Ghost } from 'lucide-react';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { useGroupedProducts } from '../hooks/useGroupedProducts';
 
 interface StockViewProps {
   products: ProductView[];
@@ -12,19 +14,65 @@ export default function StockView({ products, onOpenProduct }: StockViewProps) {
   const [typeFilter, setTypeFilter] = useState<'all' | 'real' | 'phantom'>('all');
   const [availFilter, setAvailFilter] = useState<'all' | 'in' | 'out'>('all');
 
-  const filteredProducts = products.filter((p) => {
-    const matchesSearch = 
-      p.article.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.brand.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.name.toLowerCase().includes(searchQuery.toLowerCase());
-    
+  const [colWidths, setColWidths] = useState<Record<string, number>>({
+    article: 150,
+    brand: 120,
+    name: 250,
+    purchasePrice: 120,
+    sellingPrice: 120,
+    location: 120,
+    type: 100,
+    qty: 100,
+    comment: 150
+  });
+
+  const totalWidth = Object.values(colWidths).reduce((a, b) => a + b, 0);
+
+  const startResize = (e: React.MouseEvent, colId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startWidth = colWidths[colId];
+
+    const doDrag = (dragEvent: MouseEvent) => {
+      setColWidths(prev => ({
+        ...prev,
+        [colId]: Math.max(50, startWidth + dragEvent.clientX - startX)
+      }));
+    };
+
+    const stopDrag = () => {
+      document.removeEventListener('mousemove', doDrag);
+      document.removeEventListener('mouseup', stopDrag);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    document.addEventListener('mousemove', doDrag);
+    document.addEventListener('mouseup', stopDrag);
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  };
+
+  const groupedRows = useGroupedProducts(products, searchQuery);
+
+  const filteredGroupedRows = groupedRows.filter((p) => {
     const matchesType = typeFilter === 'all' || p.type === typeFilter;
     
     let matchesAvail = true;
     if (availFilter === 'in' && p.qty <= 0) matchesAvail = false;
     if (availFilter === 'out' && p.qty > 0) matchesAvail = false;
 
-    return matchesSearch && matchesType && matchesAvail;
+    return matchesType && matchesAvail;
+  });
+
+  const parentRef = React.useRef<HTMLDivElement>(null);
+  
+  const rowVirtualizer = useVirtualizer({
+    count: filteredGroupedRows.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 53, // rough estimate of row height
+    overscan: 10,
   });
 
   return (
@@ -92,103 +140,153 @@ export default function StockView({ products, onOpenProduct }: StockViewProps) {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
-              <tr>
-                <th className="px-4 py-3 font-semibold">Артикул</th>
-                <th className="px-4 py-3 font-semibold">Бренд</th>
-                <th className="px-4 py-3 font-semibold">Название</th>
-                <th className="px-4 py-3 font-semibold">Закуп. цена</th>
-                <th className="px-4 py-3 font-semibold">Цена продажи</th>
-                <th className="px-4 py-3 font-semibold">Полка</th>
-                <th className="px-4 py-3 font-semibold">Тип</th>
-                <th className="px-4 py-3 font-semibold">Остаток</th>
-                <th className="px-4 py-3 font-semibold">Комментарий</th>
+        <div ref={parentRef} className="overflow-auto h-[70vh]">
+          <table className="text-left text-sm relative border-collapse" style={{ width: totalWidth, minWidth: '100%' }}>
+            <thead className="bg-slate-50 text-slate-600 border-b border-slate-200 sticky top-0 z-20 shadow-sm">
+              <tr style={{ display: 'flex', width: '100%' }}>
+                <th className="px-4 py-3 font-semibold relative group border-r border-slate-200 last:border-r-0" style={{ width: colWidths.article, flexShrink: 0 }}>
+                  Артикул
+                  <div onMouseDown={(e) => startResize(e, 'article')} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-400 opacity-0 hover:opacity-100 z-10 transition-opacity translate-x-1/2 bg-blue-400" />
+                </th>
+                <th className="px-4 py-3 font-semibold relative group border-r border-slate-200 last:border-r-0" style={{ width: colWidths.brand, flexShrink: 0 }}>
+                  Бренд
+                  <div onMouseDown={(e) => startResize(e, 'brand')} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-400 opacity-0 hover:opacity-100 z-10 transition-opacity translate-x-1/2 bg-blue-400" />
+                </th>
+                <th className="px-4 py-3 font-semibold relative group border-r border-slate-200 last:border-r-0" style={{ width: colWidths.name, flexShrink: 0 }}>
+                  Название
+                  <div onMouseDown={(e) => startResize(e, 'name')} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-400 opacity-0 hover:opacity-100 z-10 transition-opacity translate-x-1/2 bg-blue-400" />
+                </th>
+                <th className="px-4 py-3 font-semibold relative group border-r border-slate-200 last:border-r-0" style={{ width: colWidths.purchasePrice, flexShrink: 0 }}>
+                  Закуп. цена
+                  <div onMouseDown={(e) => startResize(e, 'purchasePrice')} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-400 opacity-0 hover:opacity-100 z-10 transition-opacity translate-x-1/2 bg-blue-400" />
+                </th>
+                <th className="px-4 py-3 font-semibold relative group border-r border-slate-200 last:border-r-0" style={{ width: colWidths.sellingPrice, flexShrink: 0 }}>
+                  Цена продажи
+                  <div onMouseDown={(e) => startResize(e, 'sellingPrice')} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-400 opacity-0 hover:opacity-100 z-10 transition-opacity translate-x-1/2 bg-blue-400" />
+                </th>
+                <th className="px-4 py-3 font-semibold relative group border-r border-slate-200 last:border-r-0" style={{ width: colWidths.location, flexShrink: 0 }}>
+                  Полка
+                  <div onMouseDown={(e) => startResize(e, 'location')} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-400 opacity-0 hover:opacity-100 z-10 transition-opacity translate-x-1/2 bg-blue-400" />
+                </th>
+                <th className="px-4 py-3 font-semibold relative group border-r border-slate-200 last:border-r-0" style={{ width: colWidths.type, flexShrink: 0 }}>
+                  Тип
+                  <div onMouseDown={(e) => startResize(e, 'type')} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-400 opacity-0 hover:opacity-100 z-10 transition-opacity translate-x-1/2 bg-blue-400" />
+                </th>
+                <th className="px-4 py-3 font-semibold relative group border-r border-slate-200 last:border-r-0" style={{ width: colWidths.qty, flexShrink: 0 }}>
+                  Остаток
+                  <div onMouseDown={(e) => startResize(e, 'qty')} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-400 opacity-0 hover:opacity-100 z-10 transition-opacity translate-x-1/2 bg-blue-400" />
+                </th>
+                <th className="px-4 py-3 font-semibold relative group border-r border-slate-200 last:border-r-0" style={{ width: colWidths.comment, flexShrink: 0 }}>
+                  Комментарий
+                  <div onMouseDown={(e) => startResize(e, 'comment')} className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-400 opacity-0 hover:opacity-100 z-10 transition-opacity translate-x-1/2 bg-blue-400" />
+                </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-200">
-              {filteredProducts.map((p) => (
-                <tr key={p.id} className="hover:bg-slate-50 transition-colors group">
-                  <td className="px-4 py-3">
-                    {p.type === 'real' ? (
-                      <button 
-                        onClick={() => onOpenProduct(p)}
-                        className="font-bold text-blue-600 hover:text-blue-800 underline decoration-dotted underline-offset-4"
-                      >
-                        {p.article}
-                      </button>
-                    ) : (
-                      <button 
-                        onClick={() => {
-                          if (p.parentId) {
-                            const rootProduct = products.find(rp => rp.id === p.parentId);
-                            if (rootProduct) onOpenProduct(rootProduct);
-                          }
-                        }}
-                        className="font-bold text-amber-600 hover:text-amber-800 underline decoration-dotted underline-offset-4"
-                        title="Открыть карточку корневого товара"
-                      >
-                        {p.article}
-                      </button>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-slate-700">{p.brand}</td>
-                  <td className="px-4 py-3 text-slate-700">
-                    {p.name}
-                    {p.type === 'phantom' && p.parentId && (() => {
-                      const rootProduct = products.find(rp => rp.id === p.parentId);
-                      if (!rootProduct) return null;
-                      return (
-                        <span className="block text-xs text-slate-400 mt-0.5">
-                          корень:{' '}
-                          <button
-                            onClick={() => onOpenProduct(rootProduct)}
-                            className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
-                          >
-                            {rootProduct.article}
-                          </button>
+            <tbody 
+              className="divide-y divide-slate-200"
+              style={{
+                display: 'block',
+                position: 'relative',
+                height: `${rowVirtualizer.getTotalSize()}px`,
+              }}
+            >
+              {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                const p = filteredGroupedRows[virtualRow.index];
+                const isEvenGroup = p.groupIndex % 2 === 0;
+                // Using standard solid colors to prevent Tailwind JIT issues
+                const bgColorStyles = isEvenGroup 
+                  ? 'bg-blue-50 hover:bg-blue-100' 
+                  : 'bg-emerald-50 hover:bg-emerald-100';
+
+                return (
+                  <tr 
+                    key={p.id} 
+                    className={`transition-colors group border-b border-slate-200 ${bgColorStyles}`}
+                    style={{
+                      display: 'flex',
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      transform: `translateY(${virtualRow.start}px)`,
+                      alignItems: 'center'
+                    }}
+                  >
+                    <td className="px-4 py-3 flex items-center truncate" style={{ width: colWidths.article, flexShrink: 0 }}>
+                      {p.isPhantom && <CornerDownRight className="w-4 h-4 text-slate-400 mr-2 flex-shrink-0" />}
+                      {!p.isPhantom ? (
+                        <button 
+                          onClick={() => onOpenProduct(p)}
+                          className="font-bold text-blue-600 hover:text-blue-800 underline decoration-dotted underline-offset-4 truncate"
+                        >
+                          {p.article}
+                        </button>
+                      ) : (
+                        <button 
+                          onClick={() => {
+                            if (p.parentId) {
+                              const rootProduct = products.find(rp => rp.id === p.parentId);
+                              if (rootProduct) onOpenProduct(rootProduct);
+                            }
+                          }}
+                          className="font-bold text-amber-600 hover:text-amber-800 underline decoration-dotted underline-offset-4 truncate"
+                          title="Открыть карточку корневого товара"
+                        >
+                          {p.article}
+                        </button>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-slate-700 truncate" style={{ width: colWidths.brand, flexShrink: 0 }}>{p.brand}</td>
+                    <td className={`px-4 py-3 truncate ${p.isPhantom ? 'text-slate-500' : 'text-slate-700'}`} style={{ width: colWidths.name, flexShrink: 0 }}>
+                      {p.name}
+                    </td>
+                    <td className="px-4 py-3 text-slate-600 font-medium truncate" style={{ width: colWidths.purchasePrice, flexShrink: 0 }}>{p.purchasePrice} ₽</td>
+                    <td className="px-4 py-3 text-slate-900 font-bold truncate" style={{ width: colWidths.sellingPrice, flexShrink: 0 }}>{p.sellingPrice} ₽</td>
+                    <td className="px-4 py-3 overflow-hidden" style={{ width: colWidths.location, flexShrink: 0 }}>
+                      {p.location !== '-' && !p.isPhantom && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-white border border-slate-200 text-slate-700 text-xs font-medium whitespace-nowrap overflow-hidden text-ellipsis w-full">
+                          <MapPin className="w-3 h-3 flex-shrink-0" />
+                          <span className="truncate">{p.location}</span>
                         </span>
-                      );
-                    })()}
-                  </td>
-                  <td className="px-4 py-3 text-slate-600 font-medium">{p.purchasePrice} ₽</td>
-                  <td className="px-4 py-3 text-slate-900 font-bold">{p.sellingPrice} ₽</td>
-                  <td className="px-4 py-3">
-                    {p.location !== '-' && (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-slate-100 border border-slate-200 text-slate-700 text-xs font-medium">
-                        <MapPin className="w-3 h-3" />
-                        {p.location}
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    {p.type === 'real' ? (
-                      <span className="inline-flex items-center px-2 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-medium">
-                        Реальный
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center px-2 py-1 rounded-full bg-amber-100 text-amber-800 text-xs font-medium">
-                        Фантом
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`font-bold ${p.qty > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                      {p.qty}
-                    </span>
-                    <span className="text-slate-500 ml-1">шт.</span>
-                  </td>
-                  <td className="px-4 py-3 text-xs text-slate-500">
-                    {p.comment && (
-                      <span className={p.qty === 0 ? 'text-rose-500' : ''}>{p.comment}</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-              {filteredProducts.length === 0 && (
-                <tr>
-                  <td colSpan={9} className="px-4 py-8 text-center text-slate-500">
+                      )}
+                    </td>
+                    <td className="px-4 py-3 truncate" style={{ width: colWidths.type, flexShrink: 0 }}>
+                      {!p.isPhantom ? (
+                        <span className="inline-flex items-center px-2 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-medium">
+                          Реальный
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-amber-100/50 text-amber-800 text-xs font-medium">
+                          <Ghost className="w-3 h-3 flex-shrink-0" />
+                          Кросс
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 truncate" style={{ width: colWidths.qty, flexShrink: 0 }}>
+                      {p.isPhantom ? (
+                        <span className="text-slate-400 font-medium whitespace-nowrap" title="Остаток берется от корневого товара">
+                          🔗 {p.qty} <span className="text-xs">шт</span>
+                        </span>
+                      ) : (
+                        <span className="whitespace-nowrap">
+                          <span className={`font-bold ${p.qty > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                            {p.qty}
+                          </span>
+                          <span className="text-slate-500 ml-1 text-xs">шт</span>
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-slate-500 truncate" style={{ width: colWidths.comment, flexShrink: 0 }}>
+                      {p.comment && (
+                        <span className={p.qty === 0 ? 'text-rose-500' : ''}>{p.comment}</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+              {filteredGroupedRows.length === 0 && (
+                <tr style={{ display: 'flex', width: '100%', justifyContent: 'center' }}>
+                  <td className="px-4 py-8 text-center text-slate-500">
                     Ничего не найдено
                   </td>
                 </tr>

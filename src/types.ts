@@ -51,6 +51,8 @@ export interface DocumentRow {
 
 export interface Document {
   id: string;
+  number?: number;
+  name?: string;
   type: 'income' | 'expense';
   date: string;
   partnerId: string;
@@ -82,4 +84,12 @@ export interface ColumnMapping {
   C: string;
   D: string;
   E: string;
+}
+
+export interface ProductHistoryRecord {
+  id: string;
+  date: string;
+  supplier: string;
+  qty: number;
+  price: number;
 }

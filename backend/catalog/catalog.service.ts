@@ -33,7 +33,7 @@ export class CatalogService {
         id: p.id,
         article: p.article,
         name: p.name,
-        type: p.type,
+        type: p.type.toLowerCase(),
         comment: p.comment,
         parentId: p.parentId,
         brandId: p.brandId,
@@ -53,9 +53,21 @@ export class CatalogService {
     });
   }
 
+  async getBrands() {
+    return this.prisma.brand.findMany({
+      orderBy: { name: 'asc' }
+    });
+  }
+
   async createLocation(dto: CreateReferenceDto) {
     return this.prisma.location.create({
       data: { name: dto.name },
+    });
+  }
+
+  async getLocations() {
+    return this.prisma.location.findMany({
+      orderBy: { name: 'asc' }
     });
   }
 
@@ -87,6 +99,88 @@ export class CatalogService {
         comment: dto.comment,
         parentId: dto.parentId,
       },
+    });
+  }
+
+  async getProductHistory(productId: string) {
+    const product = await this.prisma.catalog.findUnique({
+      where: { id: productId },
+      select: { type: true, parentId: true }
+    });
+
+    if (!product) {
+      throw new BadRequestException('Товар не найден.');
+    }
+
+    const targetProductId = product.type === 'PHANTOM' && product.parentId ? product.parentId : productId;
+
+    const historyRows = await this.prisma.documentRow.findMany({
+      where: {
+        productId: targetProductId,
+        document: {
+          type: 'INCOME'
+        }
+      },
+      include: {
+        document: {
+          include: {
+            partner: true
+          }
+        }
+      },
+      orderBy: {
+        document: {
+          date: 'desc'
+        }
+      }
+    });
+
+    return historyRows.map(row => ({
+      id: row.id,
+      date: row.document.date,
+      supplier: row.document.partner.name,
+      qty: row.qty,
+      price: row.price
+    }));
+  }
+
+  async updateProduct(id: string, dto: any) {
+    // Basic update logic for product fields + UPSERT for prices if provided
+    return this.prisma.$transaction(async (tx) => {
+      const dataToUpdate: any = {};
+      if (dto.article !== undefined) dataToUpdate.article = dto.article;
+      if (dto.name !== undefined) dataToUpdate.name = dto.name;
+      if (dto.brandId !== undefined) dataToUpdate.brandId = dto.brandId;
+      if (dto.locationId !== undefined) dataToUpdate.locationId = dto.locationId;
+      if (dto.comment !== undefined) dataToUpdate.comment = dto.comment;
+
+      const updatedProduct = await tx.catalog.update({
+        where: { id },
+        data: dataToUpdate
+      });
+
+      if (dto.purchasePrice !== undefined || dto.sellingPrice !== undefined) {
+        await tx.currentPrice.upsert({
+          where: { productId: id },
+          create: {
+            productId: id,
+            purchasePrice: dto.purchasePrice || 0,
+            sellingPrice: dto.sellingPrice || 0,
+          },
+          update: {
+            purchasePrice: dto.purchasePrice,
+            sellingPrice: dto.sellingPrice,
+          }
+        });
+      }
+
+      return updatedProduct;
+    });
+  }
+
+  async deleteProduct(id: string) {
+    return this.prisma.catalog.delete({
+      where: { id }
     });
   }
 }

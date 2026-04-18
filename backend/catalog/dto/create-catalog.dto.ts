@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsOptional, IsUUID, IsEnum, ValidateIf } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsUUID, IsEnum, ValidateIf, Matches } from 'class-validator';
 
 export class CreateReferenceDto {
   @IsString({ message: 'Название должно быть строкой' })
@@ -9,6 +9,7 @@ export class CreateReferenceDto {
 export class CreateProductDto {
   @IsString()
   @IsNotEmpty({ message: 'Артикул обязателен' })
+  @Matches(/^[^А-Яа-яЁё]*$/, { message: 'Артикул не должен содержать кириллицу' })
   article: string;
 
   @IsString()

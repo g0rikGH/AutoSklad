@@ -21,6 +21,8 @@ export class CreateDocumentDto {
   @IsUUID('4', { message: 'partnerId должен быть валидным UUID' })
   partnerId: string;
 
+  name?: string;
+
   @IsNumber()
   @Min(0, { message: 'totalAmount не может быть отрицательной суммой' })
   totalAmount: number;

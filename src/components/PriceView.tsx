@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { FileSpreadsheet, CheckCircle2, Circle, Download } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { ProductView } from '../types';
+import { useGroupedProducts } from '../hooks/useGroupedProducts';
 
 interface PriceViewProps {
   products: ProductView[];
@@ -9,18 +11,29 @@ interface PriceViewProps {
 export default function PriceView({ products }: PriceViewProps) {
   const [filter, setFilter] = useState<'all' | 'in_stock'>('all');
 
-  const filteredProducts = products.filter(p => {
+  const groupedRows = useGroupedProducts(products, '');
+
+  const filteredProducts = groupedRows.filter(p => {
     if (filter === 'in_stock') return p.qty > 0;
     return true;
   });
 
-  const handleDownload = () => {
-    // Generate CSV
-    const headers = ['Артикул', 'Бренд', 'Название', 'Цена продажи', 'Остаток'];
+  const getExportData = () => {
+    return filteredProducts.map(p => ({
+      'Артикул': p.article,
+      'Производитель': p.brand,
+      'Наименование': p.isPhantom ? `  ↳ ${p.name}` : p.name,
+      'Цена': p.sellingPrice || 0,
+      'Наличие': p.qty
+    }));
+  };
+
+  const handleDownloadCSV = () => {
+    const headers = ['Артикул', 'Производитель', 'Наименование', 'Цена', 'Наличие'];
     const rows = filteredProducts.map(p => [
       p.article,
       p.brand,
-      p.name,
+      p.isPhantom ? `  ↳ ${p.name}` : p.name,
       p.sellingPrice?.toString() || '0',
       p.qty.toString()
     ]);
@@ -38,6 +51,24 @@ export default function PriceView({ products }: PriceViewProps) {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const handleDownloadXLSX = () => {
+    const data = getExportData();
+    const worksheet = XLSX.utils.json_to_sheet(data);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Price");
+    
+    // Set some basic column widths
+    worksheet['!cols'] = [
+      { wch: 15 }, // Артикул
+      { wch: 15 }, // Бренд
+      { wch: 40 }, // Название
+      { wch: 15 }, // Цена продажи
+      { wch: 10 }  // Остаток
+    ];
+
+    XLSX.writeFile(workbook, `price_list_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   return (
@@ -97,13 +128,23 @@ export default function PriceView({ products }: PriceViewProps) {
           </div>
         </div>
 
-        <button 
-          onClick={handleDownload}
-          className="flex items-center gap-3 px-8 py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-lg font-medium transition-colors shadow-sm w-full justify-center sm:w-auto"
-        >
-          <Download className="w-6 h-6" />
-          Скачать прайс-лист (CSV)
-        </button>
+        <div className="flex flex-col sm:flex-row gap-4">
+          <button 
+            onClick={handleDownloadXLSX}
+            className="flex-1 flex items-center gap-3 px-8 py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-lg font-medium transition-colors shadow-sm justify-center"
+          >
+            <Download className="w-6 h-6" />
+            Скачать прайс (Excel)
+          </button>
+          
+          <button 
+            onClick={handleDownloadCSV}
+            className="flex-1 flex items-center gap-3 px-8 py-4 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-lg font-medium transition-colors shadow-sm justify-center"
+          >
+            <Download className="w-6 h-6" />
+            Скачать прайс (CSV)
+          </button>
+        </div>
       </div>
     </div>
   );

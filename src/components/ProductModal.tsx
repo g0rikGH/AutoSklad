@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { ProductView, Brand, Location } from '../types';
-import { X, MapPin, MessageSquare, Link as LinkIcon, Ghost, Plus, Save, DollarSign, Tag, Building2 } from 'lucide-react';
+import { ProductView, Brand, Location, ProductHistoryRecord } from '../types';
+import { X, MapPin, MessageSquare, Link as LinkIcon, Ghost, Plus, Save, DollarSign, Tag, Building2, History } from 'lucide-react';
+import api from '../api/axios';
 
 interface ProductModalProps {
   product: ProductView | null;
@@ -9,30 +10,61 @@ interface ProductModalProps {
   locations: Location[];
   onClose: () => void;
   onSave: (updatedProduct: ProductView) => void;
-  onAddPhantom: (parentId: string, sku: string, price: number) => void;
+  onAddPhantom: (parentId: string, sku: string, price: number, brand: string) => void;
   onRemovePhantom: (phantomId: string) => void;
+  onUpdatePhantomInfo: (phantomId: string, updates: any) => Promise<void>;
 }
 
-export default function ProductModal({ product, allProducts, brands, locations, onClose, onSave, onAddPhantom, onRemovePhantom }: ProductModalProps) {
+export default function ProductModal({ product, allProducts, brands, locations, onClose, onSave, onAddPhantom, onRemovePhantom, onUpdatePhantomInfo }: ProductModalProps) {
   const [editedProduct, setEditedProduct] = useState<ProductView | null>(null);
   const [newPhantomSku, setNewPhantomSku] = useState('');
   const [newPhantomPrice, setNewPhantomPrice] = useState('');
+  const [newPhantomBrand, setNewPhantomBrand] = useState('');
+  const [history, setHistory] = useState<ProductHistoryRecord[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
   useEffect(() => {
     setEditedProduct(product ? { ...product } : null);
+    
+    if (product) {
+      setLoadingHistory(true);
+      api.get(`/catalog/${product.id}/history`)
+        .then(res => {
+          if (res.data.success) {
+            setHistory(res.data.data);
+          }
+        })
+        .catch(err => console.error('Ошибка загрузки истории:', err))
+        .finally(() => setLoadingHistory(false));
+    } else {
+      setHistory([]);
+    }
   }, [product]);
 
   if (!editedProduct) return null;
 
   const handleAddPhantomClick = () => {
-    if (!newPhantomSku.trim()) return;
+    const sku = newPhantomSku.trim();
+    if (!sku) return;
+
+    if (/[А-Яа-яЁё]/.test(sku)) {
+      alert('Ошибка: Артикул кросса может содержать только латинские буквы и символы. Кириллица запрещена.');
+      return;
+    }
     
+    const parsedPrice = newPhantomPrice ? Number(newPhantomPrice) : 0;
+    if (newPhantomPrice && (isNaN(parsedPrice) || parsedPrice < 0)) {
+      alert('Ошибка: Цена продажи должна быть положительным числом.');
+      return;
+    }
+
     const parentId = editedProduct.type === 'real' ? editedProduct.id : editedProduct.parentId;
     
     if (parentId) {
-      onAddPhantom(parentId, newPhantomSku.trim(), newPhantomPrice ? Number(newPhantomPrice) : 0);
+      onAddPhantom(parentId, sku, parsedPrice, newPhantomBrand.trim());
       setNewPhantomSku('');
       setNewPhantomPrice('');
+      setNewPhantomBrand('');
     }
   };
 
@@ -196,30 +228,46 @@ export default function ProductModal({ product, allProducts, brands, locations, 
               <LinkIcon className="w-4 h-4" /> Привязанные фантомы:
             </h4>
             
-            <ul className="space-y-2 mb-4">
+            <ul className="space-y-3 mb-4">
               {phantoms.length === 0 ? (
                 <li className="text-sm text-slate-500 italic">Нет привязанных фантомов</li>
               ) : (
                 phantoms.map((phantom) => (
-                  <li key={phantom.id} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-lg">
-                    <div className="flex items-center gap-2">
-                      <Ghost className="w-4 h-4 text-amber-500" />
-                      <span className="font-bold text-slate-700">{phantom.article}</span>
+                  <li key={phantom.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-white border border-slate-200 rounded-lg gap-3">
+                    <div className="flex items-center gap-2 flex-1">
+                      <Ghost className="w-4 h-4 text-amber-500 shrink-0" />
+                      <span className="font-bold text-slate-700 whitespace-nowrap">{phantom.article}</span>
+                      <input
+                        type="text"
+                        defaultValue={phantom.brand}
+                        onBlur={(e) => {
+                          if (e.target.value !== phantom.brand) {
+                            onUpdatePhantomInfo(phantom.id, { brandName: e.target.value });
+                          }
+                        }}
+                        placeholder="Бренд"
+                        className="text-xs text-slate-600 bg-slate-50 border border-slate-200 px-2 py-1 rounded w-full max-w-[120px] focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      />
                     </div>
                     <div className="flex items-center gap-2">
                       <div className="relative">
                         <input
                           type="number"
-                          value={phantom.sellingPrice || ''}
-                          readOnly
-                          className="w-24 px-3 py-1.5 text-right bg-slate-50 border border-slate-200 rounded-md text-sm"
+                          defaultValue={phantom.sellingPrice || ''}
+                          onBlur={(e) => {
+                            const val = parseFloat(e.target.value);
+                            if (!isNaN(val) && val !== phantom.sellingPrice) {
+                              onUpdatePhantomInfo(phantom.id, { sellingPrice: val });
+                            }
+                          }}
+                          className="w-24 px-3 py-1.5 text-right bg-white border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                           placeholder="Цена"
                         />
                         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">₽</span>
                       </div>
                       <button 
                         onClick={() => onRemovePhantom(phantom.id)}
-                        className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-md transition-colors"
+                        className="p-1.5 text-rose-500 hover:bg-rose-50 border border-transparent hover:border-rose-200 rounded-md transition-colors"
                       >
                         <X className="w-4 h-4" />
                       </button>
@@ -233,7 +281,7 @@ export default function ProductModal({ product, allProducts, brands, locations, 
               <label className="block text-sm font-semibold text-slate-700 mb-2">
                 Добавить новый фантом:
               </label>
-              <div className="flex gap-2">
+              <div className="flex flex-col sm:flex-row gap-2">
                 <input
                   type="text"
                   value={newPhantomSku}
@@ -242,11 +290,18 @@ export default function ProductModal({ product, allProducts, brands, locations, 
                   className="flex-1 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 <input
+                  type="text"
+                  value={newPhantomBrand}
+                  onChange={(e) => setNewPhantomBrand(e.target.value)}
+                  placeholder="Производитель"
+                  className="flex-1 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <input
                   type="number"
                   value={newPhantomPrice}
                   onChange={(e) => setNewPhantomPrice(e.target.value)}
                   placeholder="Цена продажи"
-                  className="w-32 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full sm:w-32 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 <button 
                   onClick={handleAddPhantomClick}
@@ -257,6 +312,48 @@ export default function ProductModal({ product, allProducts, brands, locations, 
               </div>
             </div>
           </div>
+
+          {/* История приходов */}
+          <div className="mb-4">
+            <h4 className="flex items-center gap-2 font-semibold text-slate-800 mb-3">
+              <History className="w-4 h-4" /> История приходов
+            </h4>
+            <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+              <table className="w-full text-sm text-center">
+                <thead className="bg-slate-50 border-b border-slate-200">
+                  <tr>
+                    <th className="py-2 px-3 text-slate-500 font-medium whitespace-nowrap">Дата</th>
+                    <th className="py-2 px-3 text-slate-500 font-medium">Поставщик</th>
+                    <th className="py-2 px-3 text-slate-500 font-medium">Кол-во</th>
+                    <th className="py-2 px-3 text-slate-500 font-medium">Цена</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {loadingHistory ? (
+                    <tr>
+                      <td colSpan={4} className="py-4 text-slate-400">Загрузка истории...</td>
+                    </tr>
+                  ) : history.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="py-4 text-slate-400">Приходов по данному товару еще не было</td>
+                    </tr>
+                  ) : (
+                    history.map((record) => (
+                      <tr key={record.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="py-2 px-3 whitespace-nowrap text-slate-700">
+                          {new Date(record.date).toLocaleDateString('ru-RU')}
+                        </td>
+                        <td className="py-2 px-3 text-slate-700">{record.supplier}</td>
+                        <td className="py-2 px-3 font-semibold text-emerald-600">+{record.qty}</td>
+                        <td className="py-2 px-3 font-medium text-slate-700">{record.price.toLocaleString('ru-RU')} ₽</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
         </div>
 
         {/* Footer */}
