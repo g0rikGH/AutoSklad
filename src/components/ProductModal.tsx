@@ -13,9 +13,10 @@ interface ProductModalProps {
   onAddPhantom: (parentId: string, sku: string, price: number, brand: string) => void;
   onRemovePhantom: (phantomId: string) => void;
   onUpdatePhantomInfo: (phantomId: string, updates: any) => Promise<void>;
+  onOpenDocument?: (docId: string) => void;
 }
 
-export default function ProductModal({ product, allProducts, brands, locations, onClose, onSave, onAddPhantom, onRemovePhantom, onUpdatePhantomInfo }: ProductModalProps) {
+export default function ProductModal({ product, allProducts, brands, locations, onClose, onSave, onAddPhantom, onRemovePhantom, onUpdatePhantomInfo, onOpenDocument }: ProductModalProps) {
   const [editedProduct, setEditedProduct] = useState<ProductView | null>(null);
   const [newPhantomSku, setNewPhantomSku] = useState('');
   const [newPhantomPrice, setNewPhantomPrice] = useState('');
@@ -225,12 +226,12 @@ export default function ProductModal({ product, allProducts, brands, locations, 
 
           <div className="mb-4">
             <h4 className="flex items-center gap-2 font-semibold text-slate-800 mb-3">
-              <LinkIcon className="w-4 h-4" /> Привязанные фантомы:
+              <LinkIcon className="w-4 h-4" /> Привязанные кроссы:
             </h4>
             
             <ul className="space-y-3 mb-4">
               {phantoms.length === 0 ? (
-                <li className="text-sm text-slate-500 italic">Нет привязанных фантомов</li>
+                <li className="text-sm text-slate-500 italic">Нет привязанных кроссов</li>
               ) : (
                 phantoms.map((phantom) => (
                   <li key={phantom.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-3 bg-white border border-slate-200 rounded-lg gap-3">
@@ -279,7 +280,7 @@ export default function ProductModal({ product, allProducts, brands, locations, 
 
             <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
               <label className="block text-sm font-semibold text-slate-700 mb-2">
-                Добавить новый фантом:
+                Добавить новый кросс:
               </label>
               <div className="flex flex-col sm:flex-row gap-2">
                 <input
@@ -323,6 +324,7 @@ export default function ProductModal({ product, allProducts, brands, locations, 
                 <thead className="bg-slate-50 border-b border-slate-200">
                   <tr>
                     <th className="py-2 px-3 text-slate-500 font-medium whitespace-nowrap">Дата</th>
+                    <th className="py-2 px-3 text-slate-500 font-medium">№ Прихода</th>
                     <th className="py-2 px-3 text-slate-500 font-medium">Поставщик</th>
                     <th className="py-2 px-3 text-slate-500 font-medium">Кол-во</th>
                     <th className="py-2 px-3 text-slate-500 font-medium">Цена</th>
@@ -331,17 +333,30 @@ export default function ProductModal({ product, allProducts, brands, locations, 
                 <tbody className="divide-y divide-slate-100">
                   {loadingHistory ? (
                     <tr>
-                      <td colSpan={4} className="py-4 text-slate-400">Загрузка истории...</td>
+                      <td colSpan={5} className="py-4 text-slate-400">Загрузка истории...</td>
                     </tr>
                   ) : history.length === 0 ? (
                     <tr>
-                      <td colSpan={4} className="py-4 text-slate-400">Приходов по данному товару еще не было</td>
+                      <td colSpan={5} className="py-4 text-slate-400">Приходов по данному товару еще не было</td>
                     </tr>
                   ) : (
                     history.map((record) => (
                       <tr key={record.id} className="hover:bg-slate-50 transition-colors">
                         <td className="py-2 px-3 whitespace-nowrap text-slate-700">
                           {new Date(record.date).toLocaleDateString('ru-RU')}
+                        </td>
+                        <td className="py-2 px-3">
+                          {record.docId ? (
+                            <button
+                              onClick={() => onOpenDocument && onOpenDocument(record.docId)}
+                              className="font-mono font-bold text-blue-600 hover:text-blue-800 bg-slate-100 hover:bg-blue-50 px-2 py-1 rounded transition-colors text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              title="Открыть документ"
+                            >
+                              {record.docNumber || record.docId.slice(0, 8)}
+                            </button>
+                          ) : (
+                            <span className="text-slate-400">-</span>
+                          )}
                         </td>
                         <td className="py-2 px-3 text-slate-700">{record.supplier}</td>
                         <td className="py-2 px-3 font-semibold text-emerald-600">+{record.qty}</td>

@@ -4,6 +4,7 @@ import { ProductView } from '../types';
 export interface GroupedProductRow extends ProductView {
   isPhantom: boolean;
   groupIndex: number;
+  parentName?: string;
 }
 
 export function useGroupedProducts(products: ProductView[], searchQuery: string): GroupedProductRow[] {
@@ -82,7 +83,7 @@ export function useGroupedProducts(products: ProductView[], searchQuery: string)
        family.phantoms.sort((a, b) => a.article.localeCompare(b.article));
        
        family.phantoms.forEach(ph => {
-         result.push({ ...ph, isPhantom: true, groupIndex: currentGroupIndex });
+         result.push({ ...ph, isPhantom: true, groupIndex: currentGroupIndex, parentName: family.parent?.name });
        });
     });
 

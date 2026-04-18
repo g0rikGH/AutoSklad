@@ -88,6 +88,8 @@ export interface ColumnMapping {
 
 export interface ProductHistoryRecord {
   id: string;
+  docId: string;
+  docNumber?: number;
   date: string;
   supplier: string;
   qty: number;

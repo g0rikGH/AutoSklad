@@ -137,6 +137,8 @@ export class CatalogService {
 
     return historyRows.map(row => ({
       id: row.id,
+      docId: row.document.id,
+      docNumber: row.document.number || undefined,
       date: row.document.date,
       supplier: row.document.partner.name,
       qty: row.qty,

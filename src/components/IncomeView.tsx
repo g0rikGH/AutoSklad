@@ -12,12 +12,14 @@ interface IncomeViewProps {
   onSaveDocument: (doc: Document) => Promise<{ success: boolean; error?: string }>;
   onCreateMissingProduct?: (data: { article: string; brandName: string; productName: string; parentId?: string }) => Promise<any>;
   onSaveLocations?: (updates: {productId: string, locationName: string}[]) => Promise<void>;
+  externalSelectedDocumentId?: string | null;
+  onClearExternalDocument?: () => void;
 }
 
 type TabType = 'new' | 'history';
 type Step = 'upload' | 'mapping';
 
-export default function IncomeView({ suppliers, products, documents, locations, onAddSupplier, onSaveDocument, onCreateMissingProduct, onSaveLocations }: IncomeViewProps) {
+export default function IncomeView({ suppliers, products, documents, locations, onAddSupplier, onSaveDocument, onCreateMissingProduct, onSaveLocations, externalSelectedDocumentId, onClearExternalDocument }: IncomeViewProps) {
   const [activeTab, setActiveTab] = useState<TabType>('new');
   const [step, setStep] = useState<Step>('upload');
   const [selectedSupplier, setSelectedSupplier] = useState('');
@@ -34,6 +36,20 @@ export default function IncomeView({ suppliers, products, documents, locations, 
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(null);
   const [draftLocations, setDraftLocations] = useState<Record<string, string>>({});
   const [isSavingLocations, setIsSavingLocations] = useState(false);
+
+  React.useEffect(() => {
+    if (externalSelectedDocumentId) {
+      const doc = documents.find(d => d.id === externalSelectedDocumentId);
+      if (doc) {
+        setActiveTab('history');
+        setSelectedDocument(doc);
+        setDraftLocations({});
+      }
+      if (onClearExternalDocument) {
+        onClearExternalDocument();
+      }
+    }
+  }, [externalSelectedDocumentId, documents, onClearExternalDocument]);
 
   const handleOpenDocument = (doc: Document) => {
     setSelectedDocument(doc);
@@ -506,9 +522,13 @@ export default function IncomeView({ suppliers, products, documents, locations, 
                         </td>
                         <td className="p-4 font-medium">{new Date(doc.date).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'})}</td>
                         <td className="p-4">
-                           <span className="font-mono font-bold text-slate-700 bg-slate-100 px-2 py-1 rounded">
+                           <button 
+                             onClick={() => handleOpenDocument(doc)}
+                             className="font-mono font-bold text-blue-600 hover:text-blue-800 bg-slate-100 hover:bg-blue-50 px-2 py-1 rounded transition-colors text-left focus:outline-none focus:ring-2 focus:ring-blue-500"
+                             title="Открыть документ"
+                           >
                              {doc.number || doc.id.slice(0, 8)}
-                           </span>
+                           </button>
                         </td>
                         <td className="p-4 font-bold text-slate-800">
                           {suppliers.find(s => s.id === doc.partnerId)?.name || 'Неизвестен'}

@@ -113,7 +113,7 @@ export default function StockView({ products, onOpenProduct }: StockViewProps) {
                         : 'text-slate-500 hover:text-slate-700'
                     }`}
                   >
-                    {type === 'all' ? 'Все' : type === 'real' ? 'Реальные' : 'Фантомы'}
+                    {type === 'all' ? 'Все' : type === 'real' ? 'Реальные' : 'Кроссы'}
                   </button>
                 ))}
               </div>

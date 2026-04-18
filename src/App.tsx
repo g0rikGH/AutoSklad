@@ -25,6 +25,7 @@ function Dashboard() {
 
   // Modal State
   const [selectedProduct, setSelectedProduct] = useState<ProductView | null>(null);
+  const [externalDocIdToOpen, setExternalDocIdToOpen] = useState<string | null>(null);
 
   // Background color mapping based on active tab
   const bgColors: Record<TabId, string> = {
@@ -346,6 +347,8 @@ function Dashboard() {
                   throw err; // throw back to let the child know it failed
                 }
               }}
+              externalSelectedDocumentId={externalDocIdToOpen}
+              onClearExternalDocument={() => setExternalDocIdToOpen(null)}
             />
           )}
           
@@ -378,6 +381,11 @@ function Dashboard() {
           onAddPhantom={handleAddPhantom}
           onRemovePhantom={handleRemovePhantom}
           onUpdatePhantomInfo={handleUpdatePhantomInfo}
+          onOpenDocument={(docId) => {
+            setSelectedProduct(null);
+            setActiveTab('income');
+            setExternalDocIdToOpen(docId);
+          }}
         />
       )}
     </div>

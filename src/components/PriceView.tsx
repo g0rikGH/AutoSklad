@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FileSpreadsheet, CheckCircle2, Circle, Download } from 'lucide-react';
+import { FileSpreadsheet, CheckCircle2, Circle, Download, Link2, Copy, Check } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { ProductView } from '../types';
 import { useGroupedProducts } from '../hooks/useGroupedProducts';
@@ -10,6 +10,7 @@ interface PriceViewProps {
 
 export default function PriceView({ products }: PriceViewProps) {
   const [filter, setFilter] = useState<'all' | 'in_stock'>('all');
+  const [copiedLink, setCopiedLink] = useState(false);
 
   const groupedRows = useGroupedProducts(products, '');
 
@@ -22,7 +23,7 @@ export default function PriceView({ products }: PriceViewProps) {
     return filteredProducts.map(p => ({
       'Артикул': p.article,
       'Производитель': p.brand,
-      'Наименование': p.isPhantom ? `  ↳ ${p.name}` : p.name,
+      'Наименование': p.isPhantom && p.parentName ? p.parentName : p.name,
       'Цена': p.sellingPrice || 0,
       'Наличие': p.qty
     }));
@@ -33,7 +34,7 @@ export default function PriceView({ products }: PriceViewProps) {
     const rows = filteredProducts.map(p => [
       p.article,
       p.brand,
-      p.isPhantom ? `  ↳ ${p.name}` : p.name,
+      p.isPhantom && p.parentName ? p.parentName : p.name,
       p.sellingPrice?.toString() || '0',
       p.qty.toString()
     ]);
@@ -69,6 +70,14 @@ export default function PriceView({ products }: PriceViewProps) {
     ];
 
     XLSX.writeFile(workbook, `price_list_${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
+
+  const staticLink = `${window.location.origin}/api/v1/export/price-list`;
+
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(staticLink);
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 2000);
   };
 
   return (
@@ -128,7 +137,7 @@ export default function PriceView({ products }: PriceViewProps) {
           </div>
         </div>
 
-        <div className="flex flex-col sm:flex-row gap-4">
+        <div className="flex flex-col sm:flex-row gap-4 mb-8">
           <button 
             onClick={handleDownloadXLSX}
             className="flex-1 flex items-center gap-3 px-8 py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-lg font-medium transition-colors shadow-sm justify-center"
@@ -144,6 +153,38 @@ export default function PriceView({ products }: PriceViewProps) {
             <Download className="w-6 h-6" />
             Скачать прайс (CSV)
           </button>
+        </div>
+
+        <div className="bg-blue-50/50 rounded-xl p-6 border border-blue-100">
+          <h4 className="flex items-center gap-2 font-semibold text-blue-900 mb-2">
+            <Link2 className="w-5 h-5 text-blue-600" />
+            Постоянная ссылка на API
+          </h4>
+          <p className="text-sm text-blue-800/80 mb-4">
+            Эта ссылка всегда возвращает актуальный прайс-лист по <b>всем товарам</b> в формате Excel. Вы можете отдать её покупателям для автоматической загрузки роботом.
+          </p>
+          <div className="flex items-center gap-2">
+            <div className="bg-white px-4 py-2.5 rounded-lg border border-blue-200 font-mono text-xs text-slate-600 flex-1 overflow-x-auto whitespace-nowrap scrollbar-hide">
+              {staticLink}
+            </div>
+            <button 
+              onClick={handleCopyLink}
+              className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors cursor-pointer shrink-0"
+              title="Копировать в буфер"
+            >
+              {copiedLink ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+              {copiedLink ? 'Скопировано' : 'Копировать'}
+            </button>
+            <a 
+              href={staticLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center p-2.5 bg-white hover:bg-slate-50 text-slate-600 border border-slate-300 rounded-lg transition-colors cursor-pointer"
+              title="Открыть ссылку"
+            >
+              <Download className="w-4 h-4" />
+            </a>
+          </div>
         </div>
       </div>
     </div>
